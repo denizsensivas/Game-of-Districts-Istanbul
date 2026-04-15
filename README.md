@@ -17,7 +17,7 @@ Oyuncular İstanbul haritasında hareket ederek ilçeleri kontrol altına almay�
 * **Backend:** Sunucu otoritesine dayalı mimari (Hile koruması ve zar doğrulama)
 * **Real-time İletişim:** WebSocket (Socket.io veya Firebase Realtime DB)
 
-## 📄 Dokümantasyon
+## Dokümantasyon
 
 Oyunun temel döngüsü, lobi sistemi, oyun sonu hesaplamaları ve **Veri Modelleri** hakkında tüm teknik detaylar ve kurallar için aşağıdaki dokümanı inceleyebilirsiniz:
 
