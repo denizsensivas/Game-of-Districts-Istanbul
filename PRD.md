@@ -75,10 +75,34 @@ Aşağıdaki özellikler oyunun ilk canlı sürümüne (V1.0) dahil edilecektir:
 * **Gerçek Zamanlı İletişim:** Zar atışları, hareketler ve kur değişimlerinin anında görülmesi için WebSocket altyapısı (örn: Socket.io veya Firebase Realtime DB) kullanılmalıdır. HTTP istekleri (REST API) bu yapı için çok yavaş kalacaktır.
 * **Backend Otoritesi:** Hileleri engellemek için zar atma, kur değiştirme ve bilet eksiltme işlemleri tarayıcıda (Browser) değil, sunucuda (Server) hesaplanıp yayınlanmalıdır (Broadcasting).
 * **Frontend (Arayüz):** Haritanın tıklanabilir poligonlardan oluşması nedeniyle, harita manipülasyonu için React, Vue veya p5.js gibi kütüphaneler uygun olacaktır.
-* **Veri Modelleri:**
-    * Player: id, position, tickets {red, blue, green}, owned Districts.
-    * District: id, ownerld, remaining Turns, type.
-    * GameState: players, current Turn, ticketRates, activeEvents.
+### Veri Modelleri
+
+**Player (Oyuncu) Modeli:**
+
+| Özellik (Property) | Tip (Type) | Açıklama |
+| :--- | :--- | :--- |
+| `id` | String / UUID | Oyuncunun sistemdeki benzersiz kimliği. |
+| `position` | String / Int | Oyuncunun haritada bulunduğu mevcut ilçe (Node ID). |
+| `tickets` | Object | Oyuncunun cüzdanındaki bilet sayıları (Örn: `{red: 2, blue: 0, green: 1}`). |
+| `ownedDistricts` | Array | Oyuncunun o an kontrol ettiği (kapattığı) ilçelerin listesi. |
+
+**District (İlçe) Modeli:**
+
+| Özellik (Property) | Tip (Type) | Açıklama |
+| :--- | :--- | :--- |
+| `id` | String / Int | İlçenin haritadaki benzersiz kimliği. |
+| `ownerId` | String / UUID | Masayı kapatan oyuncunun ID'si (İlçe boşsa `null`). |
+| `remainingTurns` | Integer | Masanın kapalı kalacağı kalan tur sayısı (0 ise masa boştur). |
+| `type` | String | İlçenin fonksiyon türü (Örn: `normal`, `bridge`, `transport`). |
+
+**GameState (Oyun Durumu) Modeli:**
+
+| Özellik (Property) | Tip (Type) | Açıklama |
+| :--- | :--- | :--- |
+| `players` | Array | Odadaki tüm aktif oyuncuların veri nesnelerini içeren liste. |
+| `currentTurn` | Integer | Oyunun o an kaçıncı turunda olduğunu gösteren sayaç (Max 30). |
+| `ticketRates` | Object | Biletlerin birbirine karşı olan anlık kur değerleri. |
+| `activeEvents` | Array | O turda devrede olan global olaylar veya sabotaj durumları. |
 
 ## 6. Kapsam Dışı (Faz 2) ve Gelecek Özellikler
 **MVP Kapsamı Dışındakiler (Out-of-Scope):** Projenin hızlıca test edilebilir (playable) hale gelmesi için V1.0 sürümüne şunlar dahil edilmeyecektir:
