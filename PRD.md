@@ -1,10 +1,9 @@
-# [cite_start]Game of Districts: Istanbul - Teknik Ürün Gereksinim Dokümanı (PRD) [cite: 99, 100]
+# Game of Districts: Istanbul - Teknik Ürün Gereksinim Dokümanı (PRD)
 
-## [cite_start]1. Ürün Özeti [cite: 105]
-[cite_start]Game of Districts: Istanbul; klasik kutu oyunlarının yavaş ve tahmin edilebilir yapısını kıran, hızlı tempolu, yüksek etkileşimli ve sabotaj odaklı bir multiplayer strateji oyunudur. [cite: 106] [cite_start]Oyuncular İstanbul haritasında hareket ederek ilçeleri kontrol altına almayı hedefler. [cite: 107] [cite_start]Aynı zamanda dinamik ekonomi sistemini manipüle eder ve rakiplerini sabote ederek oyunu kazanmaya çalışırlar. [cite: 108]
-
-* [cite_start]**Tür:** Web tabanlı Multiplayer Strateji Oyunu [cite: 101]
-* [cite_start]**Platform:** Web (ilk faz), ileride Mobile (opsiyonel) [cite: 102]
+## 1. Ürün Özeti 
+Game of Districts: Istanbul; klasik kutu oyunlarının yavaş ve tahmin edilebilir yapısını kıran, hızlı tempolu, yüksek etkileşimli ve sabotaj odaklı bir multiplayer strateji oyunudur. Oyuncular İstanbul haritasında hareket ederek ilçeleri kontrol altına almayı hedefler. Aynı zamanda dinamik ekonomi sistemini manipüle eder ve rakiplerini sabote ederek oyunu kazanmaya çalışırlar.
+* **Tür:** Web tabanlı Multiplayer Strateji Oyunu 
+* **Platform:** Web (ilk faz), ileride Mobile (opsiyonel) 
 * [cite_start]**Oyuncu Sayısı:** 2-8 kişi [cite: 103]
 * [cite_start]**Oyun Süresi:** 20-25 dakika [cite: 104]
 
