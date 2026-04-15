@@ -72,4 +72,21 @@ Aşağıdaki özellikler oyunun ilk canlı sürümüne (V1.0) dahil edilecektir:
 * Bu değere göre sıralama ekranda gösterilir. En yüksek toplam varlığa sahip olan oyuncu oyunu kazanır.
 
 ## 5. Teknik Mimari ve Altyapı
-* **Gerçek Zamanlı İletişim:** Zar atışları, hareketler ve kur değişimlerinin an
+* **Gerçek Zamanlı İletişim:** Zar atışları, hareketler ve kur değişimlerinin anında görülmesi için WebSocket altyapısı (örn: Socket.io veya Firebase Realtime DB) kullanılmalıdır. HTTP istekleri (REST API) bu yapı için çok yavaş kalacaktır.
+* **Backend Otoritesi:** Hileleri engellemek için zar atma, kur değiştirme ve bilet eksiltme işlemleri tarayıcıda (Browser) değil, sunucuda (Server) hesaplanıp yayınlanmalıdır (Broadcasting).
+* **Frontend (Arayüz):** Haritanın tıklanabilir poligonlardan oluşması nedeniyle, harita manipülasyonu için React, Vue veya p5.js gibi kütüphaneler uygun olacaktır.
+* **Veri Modelleri:**
+    * Player: id, position, tickets {red, blue, green}, owned Districts.
+    * District: id, ownerld, remaining Turns, type.
+    * GameState: players, current Turn, ticketRates, activeEvents.
+
+## 6. Kapsam Dışı (Faz 2) ve Gelecek Özellikler
+**MVP Kapsamı Dışındakiler (Out-of-Scope):** Projenin hızlıca test edilebilir (playable) hale gelmesi için V1.0 sürümüne şunlar dahil edilmeyecektir:
+* Premium abonelikler ve kredi kartı/ödeme sistemleri içeren mağaza entegrasyonu.
+* Animasyonlu özel zarlar ve satın alınabilir kozmetik avatarlar (Skins).
+* Gelişmiş arkadaşlık sistemi ve mesajlaşma (Yalnızca hazır emoji yollama eklenebilir).
+
+**Gelecek Özellikler:**
+* Ranking (Sıralama) sistemi.
+* Turnuvalar.
+* Yeni şehir haritaları (Game of Districts: World)
