@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  createdAt DateTime @default(now())
+  players   Player[]
+}
+
+model Room {
+  id         String   @id @default(uuid())
+  inviteCode String   @unique @db.VarChar(6)
+  status     String   @default("waiting") // waiting, playing, finished
+  createdAt  DateTime @default(now())
+  players    Player[]
+}
+
+model Player {
+  id           String  @id @default(uuid())
+  userId       String
+  user         User    @relation(fields: [userId], references: [id])
+  roomId       String
+  room         Room    @relation(fields: [roomId], references: [id])
+  character    String  // Ogrenci, Turist, Esnaf, BeyazYakali
+  position     String  @default("baslangic") // District ID
+  redTickets   Int     @default(10)
+  blueTickets  Int     @default(10)
+  greenTickets Int     @default(10)
+  isTurn       Boolean @default(false)
+  ownedDistricts DistrictState[]
+
+  @@unique([userId, roomId])
+}
+
+model DistrictState {
+  id             String  @id @default(uuid())
+  districtId     String  // ID from SVG map
+  ownerId        String?
+  owner          Player? @relation(fields: [ownerId], references: [id])
+  remainingTurns Int     @default(0) // 3 turluk rezervasyon
+  type           String  @default("normal") // normal, yol_calismasi, ulasim
+}
