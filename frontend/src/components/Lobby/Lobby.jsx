@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import useGameStore from '../../store/gameStore';
-import { motion } from 'framer-motion';
-import { Users, UserPlus, LogIn } from 'lucide-react';
+import { motion as Motion } from 'framer-motion';
+import { FlaskConical, Users, UserPlus, LogIn } from 'lucide-react';
 
 const characters = [
   { id: 'Ogrenci', label: 'Öğrenci', bonus: 'Bilet alımlarında %10 indirim', color: 'bg-blue-100 border-blue-500' },
@@ -15,7 +15,12 @@ export default function Lobby() {
   const [selectedCharacter, setSelectedCharacter] = useState(characters[0].id);
   const [inviteCode, setInviteCode] = useState('');
   
-  const { user, joinLobby, createRoom, joinRoom } = useGameStore();
+  const { user, joinLobby, createRoom, joinRoom, createTestRoom } = useGameStore();
+  const searchParams = new URLSearchParams(window.location.search);
+  const canSeeTestMode =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    searchParams.get('testMode') === '1';
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -26,7 +31,7 @@ export default function Lobby() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-accent)] text-white">
-      <motion.div 
+      <Motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 text-gray-800"
@@ -66,15 +71,27 @@ export default function Lobby() {
             <button type="submit" className="w-full py-4 bg-[var(--color-secondary)] text-white text-xl game-btn flex items-center justify-center gap-2">
               <LogIn size={24} /> Oyuna Gir
             </button>
+
+            {canSeeTestMode && (
+              <button type="button" onClick={createTestRoom} className="w-full py-4 bg-gray-900 text-white text-xl game-btn flex items-center justify-center gap-2">
+                <FlaskConical size={24} /> Test Modu (2 Oyuncu)
+              </button>
+            )}
           </form>
         ) : (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+          <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
             <div className="text-center p-3 bg-gray-100 rounded-xl">
               <p className="text-sm text-gray-500">Hoş geldin,</p>
               <p className="text-xl font-bold">{user.username}</p>
             </div>
             
             <div className="space-y-3">
+              {canSeeTestMode && (
+                <button onClick={createTestRoom} className="w-full py-4 bg-gray-900 text-white text-xl game-btn flex items-center justify-center gap-2">
+                  <FlaskConical size={24} /> Test Modu (2 Oyuncu)
+                </button>
+              )}
+
               <button onClick={createRoom} className="w-full py-4 bg-[var(--color-primary)] text-white text-xl game-btn flex items-center justify-center gap-2">
                 <UserPlus size={24} /> Oda Kur (Max 8)
               </button>
@@ -98,9 +115,9 @@ export default function Lobby() {
                 </button>
               </div>
             </div>
-          </motion.div>
+          </Motion.div>
         )}
-      </motion.div>
+      </Motion.div>
     </div>
   );
 }

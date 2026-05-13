@@ -26,3 +26,18 @@ body {
 .game-btn {
   @apply font-bold rounded-xl shadow-md transition-all duration-150 active:scale-95 active:shadow-sm;
 }
+
+.game-map,
+.game-map * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-map:focus,
+.game-map *:focus {
+  outline: none;
+}
+
+.game-map::selection,
+.game-map *::selection {
+  background: transparent;
+}
