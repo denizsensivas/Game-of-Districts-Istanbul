@@ -3,6 +3,7 @@ import useGameStore from '../../store/gameStore';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Dice5, AlertTriangle, Car, Coffee, Sparkles, X } from 'lucide-react';
 import IstanbulMap from '../Map/IstanbulMap';
+import { getCharacterTheme } from '../../utils/characterColors';
 
 export default function Dashboard() {
   const {
@@ -92,7 +93,13 @@ export default function Dashboard() {
         <div className="bg-white/90 backdrop-blur rounded-2xl p-3 shadow-lg pointer-events-auto border-2 border-gray-100 flex items-center gap-3">
           <div className="bg-[var(--color-primary)] text-white text-xs font-bold px-2 py-1 rounded-lg">ODA: {room.inviteCode}</div>
           {isTestMode && (
-            <div className="bg-violet-100 text-violet-700 text-xs font-black px-2 py-1 rounded-lg">
+            <div
+              className="text-xs font-black px-2 py-1 rounded-lg"
+              style={{
+                color: getCharacterTheme(myPlayer?.character).text,
+                backgroundColor: getCharacterTheme(myPlayer?.character).soft,
+              }}
+            >
               TEST: {myPlayer?.character}
             </div>
           )}
@@ -102,7 +109,14 @@ export default function Dashboard() {
           </div>
           <div className="flex -space-x-2">
             {players.map((p, i) => (
-              <div key={i} className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold ${p.isTurn ? 'bg-[var(--color-secondary)] text-white' : 'bg-gray-300'}`} title={p.character}>
+              <div
+                key={i}
+                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold text-white ${
+                  p.isTurn ? 'border-white shadow-md scale-105' : 'border-white/80 opacity-80'
+                }`}
+                style={{ backgroundColor: getCharacterTheme(p.character).fill }}
+                title={p.character}
+              >
                 {p.character.substring(0, 1)}
               </div>
             ))}

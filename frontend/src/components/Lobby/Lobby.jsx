@@ -2,12 +2,13 @@ import { useState } from 'react';
 import useGameStore from '../../store/gameStore';
 import { motion as Motion } from 'framer-motion';
 import { FlaskConical, Users, UserPlus, LogIn } from 'lucide-react';
+import { getCharacterTheme } from '../../utils/characterColors';
 
 const characters = [
-  { id: 'Ogrenci', label: 'Öğrenci', bonus: 'Bilet alımlarında %10 indirim', color: 'bg-blue-100 border-blue-500' },
-  { id: 'Turist', label: 'Turist', bonus: 'Taksilerde %20 başarı şansı', color: 'bg-orange-100 border-orange-500' },
-  { id: 'Esnaf', label: 'Esnaf', bonus: 'Dükkanlardan 2 kat kira alır', color: 'bg-green-100 border-green-500' },
-  { id: 'BeyazYakali', label: 'Beyaz Yakalı', bonus: 'Hafta sonu zar x2', color: 'bg-purple-100 border-purple-500' }
+  { id: 'Ogrenci', label: 'Öğrenci', bonus: 'Bilet alımlarında %10 indirim' },
+  { id: 'Turist', label: 'Turist', bonus: 'Taksilerde %20 başarı şansı' },
+  { id: 'Esnaf', label: 'Esnaf', bonus: 'Dükkanlardan 2 kat kira alır' },
+  { id: 'BeyazYakali', label: 'Beyaz Yakalı', bonus: 'Hafta sonu zar x2' }
 ];
 
 export default function Lobby() {
@@ -59,7 +60,9 @@ export default function Lobby() {
                   <div 
                     key={c.id}
                     onClick={() => setSelectedCharacter(c.id)}
-                    className={`p-2 rounded-xl border-2 cursor-pointer transition-all ${selectedCharacter === c.id ? c.color : 'bg-gray-50 border-transparent hover:bg-gray-100'}`}
+                    className={`p-2 rounded-xl border-2 cursor-pointer transition-all ${
+                      selectedCharacter === c.id ? getCharacterTheme(c.id).className : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                    }`}
                   >
                     <div className="font-bold text-center">{c.label}</div>
                     <div className="text-[10px] text-center text-gray-600 leading-tight mt-1">{c.bonus}</div>

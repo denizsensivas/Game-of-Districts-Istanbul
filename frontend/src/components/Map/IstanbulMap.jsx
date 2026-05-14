@@ -3,14 +3,41 @@ import { motion as Motion } from 'framer-motion';
 import { Minus, Plus } from 'lucide-react';
 import useGameStore from '../../store/gameStore';
 import { districtsData } from './mapData';
+import { getCharacterTheme } from '../../utils/characterColors';
 
 function getDistrictPathIndex(district, mapType) {
   return district.mapPaths?.[mapType] ?? district.pathIndex;
 }
 
+function getViewBoxParts(viewBox) {
+  const [minX = 0, minY = 0, width = 1094, height = 577] = viewBox.split(/\s+/).map(Number);
+  return { minX, minY, width, height };
+}
+
+function getSvgAttribute(tag, attribute) {
+  return tag.match(new RegExp(`\\s${attribute}="([^"]+)"`))?.[1] || '';
+}
+
+function getLabelFontSize(name) {
+  if (name.length >= 13) return 22;
+  if (name.length >= 10) return 28;
+  return 34;
+}
+
+function getMapPoint(item, svgMap) {
+  return {
+    x: svgMap.minX + (item.x / 100) * svgMap.width,
+    y: svgMap.minY + (item.y / 100) * svgMap.height,
+  };
+}
+
 function parseMapSvg(svgText, mapType) {
   const viewBoxMatch = svgText.match(/viewBox="([^"]+)"/);
+  const viewBox = viewBoxMatch?.[1] || '0 0 1094 577';
+  const viewBoxParts = getViewBoxParts(viewBox);
+  const backgroundFill = svgText.match(/<rect\b[^>]*\sid="marmaradenizi"[^>]*\sfill="([^"]+)"/)?.[1] || 'white';
   const pathTags = [...svgText.matchAll(/<path\b[^>]*>/g)];
+  const districtBySvgId = new Map(districtsData.map((district) => [district.svgId || district.id, district]));
   const districtByPathIndex = new Map(
     districtsData
       .map((district) => [getDistrictPathIndex(district, mapType), district])
@@ -18,19 +45,33 @@ function parseMapSvg(svgText, mapType) {
   );
 
   return {
-    viewBox: viewBoxMatch?.[1] || '0 0 1094 577',
+    viewBox,
+    ...viewBoxParts,
     paths: pathTags
       .map((match, index) => ({
         index,
-        d: match[0].match(/\sd="([^"]+)"/)?.[1] || '',
-        district: districtByPathIndex.get(index) || null,
+        id: getSvgAttribute(match[0], 'id'),
+        d: getSvgAttribute(match[0], 'd'),
+        fill: getSvgAttribute(match[0], 'fill') || '#D6D6D6',
+        stroke: getSvgAttribute(match[0], 'stroke') || 'white',
+        strokeWidth: Number(getSvgAttribute(match[0], 'stroke-width')) || 1,
+        district: districtBySvgId.get(getSvgAttribute(match[0], 'id')) || districtByPathIndex.get(index) || null,
       }))
       .filter((path) => path.d),
+    backgroundFill,
   };
 }
 
 export default function IstanbulMap() {
-  const [svgMap, setSvgMap] = useState({ viewBox: '0 0 1094 577', paths: [] });
+  const [svgMap, setSvgMap] = useState({
+    viewBox: '0 0 1094 577',
+    minX: 0,
+    minY: 0,
+    width: 1094,
+    height: 577,
+    paths: [],
+    backgroundFill: 'white',
+  });
   const [zoom, setZoom] = useState(1.5);
   const constraintsRef = useRef(null);
 
@@ -57,6 +98,7 @@ export default function IstanbulMap() {
       return acc;
     }, {});
   }, [players]);
+  const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
 
   const updateZoom = (nextZoom) => {
     setZoom(Math.min(2.8, Math.max(0.8, Number(nextZoom.toFixed(2)))));
@@ -75,7 +117,7 @@ export default function IstanbulMap() {
     >
       <div className="absolute top-28 right-4 z-20 bg-white/80 p-2 rounded-xl shadow pointer-events-none">
         <div className="px-3 py-2 text-xs font-black rounded-lg bg-gray-900 text-white">
-          {mapType === 'smallMap.svg' ? 'Küçük Harita' : 'Büyük Harita'}
+          {mapType === 'Kucuk_idli.svg' ? 'Küçük Harita' : 'Büyük Harita'}
         </div>
       </div>
 
@@ -115,12 +157,14 @@ export default function IstanbulMap() {
           role="img"
           aria-label="İstanbul oyun haritası"
         >
-          <rect width="1094" height="577" fill="white" />
+          <rect x={svgMap.minX} y={svgMap.minY} width={svgMap.width} height={svgMap.height} fill={svgMap.backgroundFill} />
           {svgMap.paths.map((path) => {
             const district = path.district;
             const districtStatus = district ? mapState[district.id] : null;
             const isReachable = district ? possibleMoves.includes(district.id) : false;
             const isOwned = Boolean(districtStatus?.ownerId);
+            const ownerTheme = isOwned ? getCharacterTheme(playersById.get(districtStatus.ownerId)?.character) : null;
+            const isHighlighted = Boolean(district && (isReachable || isOwned));
 
             return (
               <path
@@ -139,35 +183,62 @@ export default function IstanbulMap() {
                   }
                 }}
                 className={`outline-none focus:outline-none transition-colors duration-200 ${
-                  district && isReachable ? 'cursor-pointer' : district ? 'cursor-default' : 'pointer-events-none'
+                  district && isReachable ? 'cursor-pointer' : 'pointer-events-none'
                 }`}
                 fill={
-                  district && isReachable
-                    ? '#FF5A5F'
-                    : isOwned
-                      ? '#7C3AED'
-                      : district
-                        ? '#D6D6D6'
-                        : '#D6D6D6'
+                  isOwned
+                    ? ownerTheme.fill
+                    : district && isReachable
+                      ? '#FF5A5F'
+                      : path.fill
                 }
-                fillOpacity={district && isReachable ? 0.92 : isOwned ? 0.78 : 0.82}
-                stroke={district && isReachable ? '#D32F2F' : district ? '#FFFFFF' : '#A7A7A7'}
-                strokeWidth={district && isReachable ? 4 : 1.4}
+                fillOpacity={isOwned ? 0.76 : district && isReachable ? 0.72 : 1}
+                stroke={district && isReachable ? '#D32F2F' : isOwned ? ownerTheme.stroke : path.stroke}
+                strokeWidth={isHighlighted ? 5 : path.strokeWidth}
+                pointerEvents={district && isReachable ? 'auto' : 'none'}
               >
                 {district && <title>{district.name}</title>}
               </path>
             );
           })}
 
+          {districtsData.map((district) => (
+            <text
+              key={`${district.id}-label`}
+              x={getMapPoint(district, svgMap).x}
+              y={getMapPoint(district, svgMap).y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontFamily="'Baloo 2', ui-rounded, system-ui, sans-serif"
+              fontSize={district.labelSize || getLabelFontSize(district.name)}
+              fontWeight="800"
+              letterSpacing="0"
+              textLength={district.labelWidth}
+              lengthAdjust={district.labelWidth ? 'spacingAndGlyphs' : undefined}
+              fill="#3B2417"
+              stroke="#FFF4D7"
+              strokeWidth="7"
+              paintOrder="stroke"
+              style={{ filter: 'drop-shadow(0 3px 0 rgba(40, 29, 20, 0.28))' }}
+              pointerEvents="none"
+            >
+              {district.name}
+            </text>
+          ))}
+
           {districtsData.map((district) => {
             const occupiedPlayers = playersByDistrict[district.id] || [];
             const districtStatus = mapState[district.id];
             const isReachable = possibleMoves.includes(district.id);
+            const ownerTheme = districtStatus?.ownerId ? getCharacterTheme(playersById.get(districtStatus.ownerId)?.character) : null;
 
             if (occupiedPlayers.length === 0 && !districtStatus?.remainingTurns && !isReachable) return null;
 
             return (
-              <g key={district.id} transform={`translate(${(district.x / 100) * 1094} ${(district.y / 100) * 577})`}>
+              <g
+                key={district.id}
+                transform={`translate(${getMapPoint(district, svgMap).x} ${getMapPoint(district, svgMap).y})`}
+              >
                 {districtStatus?.type === 'blocked' ? (
                   <>
                     <circle r="13" fill="#ef4444" opacity="0.92" />
@@ -177,7 +248,7 @@ export default function IstanbulMap() {
                   </>
                 ) : districtStatus?.remainingTurns > 0 ? (
                   <>
-                    <circle r="13" fill="#111827" opacity="0.92" />
+                    <circle r="13" fill="#111827" stroke={ownerTheme?.stroke || 'white'} strokeWidth="2" opacity="0.92" />
                     <text y="4" textAnchor="middle" fontSize="12" fontWeight="900" fill="white">
                       {districtStatus.remainingTurns}
                     </text>
@@ -185,7 +256,7 @@ export default function IstanbulMap() {
                 ) : null}
                 {occupiedPlayers.map((player, index) => (
                   <g key={player.id} transform={`translate(${index * 15 - (occupiedPlayers.length - 1) * 7.5} -22)`}>
-                    <circle r="11" fill="#2563EB" stroke="white" strokeWidth="3" />
+                    <circle r="11" fill={getCharacterTheme(player.character).fill} stroke="white" strokeWidth="3" />
                     <text y="4" textAnchor="middle" fontSize="9" fontWeight="900" fill="white">
                       {player.character.substring(0, 1)}
                     </text>

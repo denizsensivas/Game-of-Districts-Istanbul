@@ -16,6 +16,7 @@ Aşağıdaki özellikler oyunun ilk canlı sürümüne (V1.0) dahil edilecektir:
 **Harita (Game Board):**
 * **Poligon Harita:** İstanbul'un 39 ilçesini temsil eden, tıklanabilir SVG/Vektörel harita. Haritada Node-to-Node komşuluk ilişkileri tanımlanmış olmalıdır.
 * **Dinamik Kısıtlama:** Odadaki oyuncu sayısı 4 veya daha az ise, oyun başlarken rastgele 15 ilçe "Yol Çalışması" (Pasif/Tıklanamaz) durumuna geçer.
+* **Harita Yazı Tipi Notu:** İlçe isimleri SVG içindeki canlı text layer'larından değil, uygulama tarafındaki label katmanından çizilir. Kullanılan font `Baloo 2` (`700/800`) olmalıdır; uzun ilçe adlarında font boyutu ilçeye göre düşürülür.
 
 **Ekonomi Sistemi:**
 * **Bilet Cüzdanı:** Her oyuncunun Kırmızı, Mavi ve Yeşil bilet stokunu tutan arayüzdür.

@@ -53,7 +53,7 @@ async function startMatchmakingGame(io) {
 }
 
 function getMapTypeForPlayerCount(playerCount) {
-  return playerCount <= 4 ? 'smallMap.svg' : 'bigMap.svg';
+  return playerCount <= 4 ? 'Kucuk_idli.svg' : 'buyuk.svg';
 }
 
 function getCharacterBonus(character) {
