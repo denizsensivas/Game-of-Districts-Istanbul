@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const { Pool } = require('pg');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const mapData = require('../data/mapData');
+const { narrateActiveEvent } = require('../services/llmNarrator');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -14,11 +15,18 @@ const RENT_COST_RED = 3;
 const SABOTAGE_COST_BLUE = 2;
 const FORTUNE_COST_GREEN = 2;
 const TAXI_COST_GREEN = 1;
+const FERRY_COST_GREEN = 1;
+const TICKET_FIELDS = {
+  red: 'redTickets',
+  blue: 'blueTickets',
+  green: 'greenTickets',
+};
 
 const connectedUsers = new Map();
 const roomStates = new Map();
 const matchmakingQueue = [];
 let matchmakingTimer = null;
+let activeEventTokenCounter = 0;
 
 async function startMatchmakingGame(io) {
   if (matchmakingQueue.length < 2) return;
@@ -45,11 +53,20 @@ async function startMatchmakingGame(io) {
   for (const p of playersInMatch) {
     p.socket.join(room.id);
     connectedUsers.set(p.socket.id, { userId: p.userId, roomId: room.id });
-    p.socket.emit('roomJoined', { room, player: players.find(x => x.userId === p.userId), players });
+    p.socket.emit('roomJoined', { room, player: players.find(x => x.userId === p.userId), players, mapType: roomState.mapType });
   }
   
   await emitGameState(io, room.id);
   await startTurnTimer(io, room.id, players[0].userId);
+}
+
+const MAP_TYPES = {
+  small: 'Kucuk_idli.svg',
+  big: 'buyuk.svg',
+};
+
+function normalizeMapType(mapType) {
+  return Object.values(MAP_TYPES).includes(mapType) ? mapType : null;
 }
 
 function getMapTypeForPlayerCount(playerCount) {
@@ -68,14 +85,17 @@ function getCharacterBonus(character) {
 
 
 
-function createInitialRoomState(roomId, firstPlayerId, playerCount = 1) {
+function createInitialRoomState(roomId, firstPlayerId, playerCount = 1, requestedMapType = null) {
   return {
     roomId,
     currentRound: 1,
     maxRounds: MAX_ROUNDS,
-    mapType: getMapTypeForPlayerCount(playerCount),
+    mapType: normalizeMapType(requestedMapType) || getMapTypeForPlayerCount(playerCount),
     ticketRates: { red: 1, blue: 2, green: 4 },
     activeEvent: 'Oyun başladı',
+    activeEventStatus: 'ready',
+    activeEventType: 'system',
+    activeEventToken: null,
     districts: {},
     lastRoll: null,
     turnEndsAt: null,
@@ -92,6 +112,13 @@ function getRoomState(roomId, firstPlayerId) {
   return roomStates.get(roomId);
 }
 
+function setStaticActiveEvent(roomState, activeEvent, activeEventType = 'system') {
+  roomState.activeEvent = activeEvent;
+  roomState.activeEventStatus = 'ready';
+  roomState.activeEventType = activeEventType;
+  roomState.activeEventToken = null;
+}
+
 function serializeMapState(districts) {
   return Object.fromEntries(
     Object.entries(districts).map(([districtId, district]) => [
@@ -105,8 +132,18 @@ function serializeMapState(districts) {
   );
 }
 
-function findReachableDistricts(startNode, steps) {
-  return mapData.findReachableDistricts(startNode, steps);
+function getReachableMoveDetails(startNode, steps, player, mapType) {
+  return mapData.findReachableRouteDetails(startNode, steps, mapType)
+    .filter((route) => !route.ferryRequired || player.greenTickets >= FERRY_COST_GREEN)
+    .map((route) => ({
+      districtId: route.districtId,
+      ferryRequired: route.ferryRequired,
+      ferryCostGreen: route.ferryRequired ? FERRY_COST_GREEN : 0,
+    }));
+}
+
+function indexMoveDetails(moveDetails) {
+  return Object.fromEntries(moveDetails.map((move) => [move.districtId, move]));
 }
 
 function rollTicketRates(currentRates) {
@@ -121,6 +158,37 @@ function rollTicketRates(currentRates) {
     rates: nextRates,
     event: `${changedColor.toUpperCase()} kur ${direction > 0 ? 'yükseldi' : 'düştü'}`,
   };
+}
+
+function getTicketName(color) {
+  return { red: 'Kırmızı', blue: 'Mavi', green: 'Yeşil' }[color] || color;
+}
+
+function getTicketNameLower(color) {
+  return { red: 'kırmızı', blue: 'mavi', green: 'yeşil' }[color?.toLowerCase()] || color?.toLowerCase() || 'bilet';
+}
+
+function getFortuneFallback(event) {
+  const [rawColor] = String(event || '').split(' ');
+  const color = rawColor?.toLowerCase();
+  const ticketName = getTicketNameLower(rawColor);
+  const wentUp = String(event || '').includes('yükseldi');
+  const resultText = wentUp ? `${ticketName} biletler zamlandı` : `${ticketName} biletler ucuzladı`;
+  const causesByColor = {
+    red: wentUp
+      ? ['Mekan kiraları uçtu', 'Çay hesapları kabardı', 'Masalar kapış kapış gitti']
+      : ['Esnaf kepenkleri erken açtı', 'Çaylar şirketten yazıldı', 'Boş masa bolluğu çıktı'],
+    blue: wentUp
+      ? ['Zabıta denetimi arttı', 'Ruhsat kontrolü sıkılaştı', 'Masa dağıtma söylentisi yayıldı']
+      : ['Zabıta çay molasına çıktı', 'Denetim dosyaları karıştı', 'Mühürler çekmeceye kalktı'],
+    green: wentUp
+      ? ['Lodos çıktı, vapur seferleri iptal', 'Köprüde kaza oldu', 'Taksi durağında kuyruk uzadı']
+      : ['Boğaz trafiği açıldı', 'Vapur iskelesinde sıra kalmadı', 'Falda boş taksi çıktı'],
+  };
+  const causes = causesByColor[color] || ['Fincanda tuhaf bir işaret belirdi'];
+  const cause = causes[Math.floor(Math.random() * causes.length)];
+
+  return `${cause}, ${resultText}`;
 }
 
 function calculateScore(player, roomState) {
@@ -149,9 +217,37 @@ async function emitGameState(io, roomId) {
     mapType: roomState.mapType,
     ticketRates: roomState.ticketRates,
     activeEvent: roomState.activeEvent,
+    activeEventStatus: roomState.activeEventStatus,
+    activeEventType: roomState.activeEventType,
     turnEndsAt: roomState.turnEndsAt,
     mapState: serializeMapState(roomState.districts),
     gameOver: roomState.gameOver,
+    activeRoll: roomState.lastRoll,
+  });
+}
+
+async function revealActiveEvent(io, roomId, context, loadingEvent, fallbackEvent) {
+  const roomState = roomStates.get(roomId);
+  if (!roomState) return;
+
+  const eventToken = `${Date.now()}-${activeEventTokenCounter += 1}`;
+  roomState.activeEvent = loadingEvent;
+  roomState.activeEventStatus = 'loading';
+  roomState.activeEventType = context.eventType;
+  roomState.activeEventToken = eventToken;
+  await emitGameState(io, roomId);
+
+  narrateActiveEvent(context).then(async (narratedEvent) => {
+    const roomState = roomStates.get(roomId);
+    if (!roomState || roomState.activeEventToken !== eventToken) return;
+
+    roomState.activeEvent = narratedEvent || fallbackEvent;
+    roomState.activeEventStatus = 'ready';
+    roomState.activeEventType = context.eventType;
+    roomState.activeEventToken = null;
+    await emitGameState(io, roomId);
+  }).catch((err) => {
+    console.warn('Active event narration failed:', err.message);
   });
 }
 
@@ -180,8 +276,17 @@ async function endGame(io, roomId) {
     }))
     .sort((a, b) => b.score - a.score);
 
+  const winner = rankings[0] || null;
+  const staticEvent = winner ? `${winner.character} oyunu kazandı` : 'Oyun sona erdi';
+
   io.to(roomId).emit('gameEnded', { rankings });
-  await emitGameState(io, roomId);
+  await revealActiveEvent(io, roomId, {
+    eventType: 'endGame',
+    staticEvent,
+    ticketRates: roomState.ticketRates,
+    outcome: 'gameEnded',
+    winner,
+  }, 'Skor defteri açılıyor', winner ? 'Kazanan belli, İstanbul alkışta' : 'Oyun bitti, masa dağıldı');
 }
 
 async function advanceTurn(io, roomId, currentUserId) {
@@ -257,7 +362,7 @@ module.exports = (io) => {
       }
     });
 
-    socket.on('createRoom', async ({ userId, character }) => {
+    socket.on('createRoom', async ({ userId, character, mapType }) => {
       try {
         const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
         const room = await prisma.room.create({ data: { inviteCode, status: 'playing' } });
@@ -266,19 +371,19 @@ module.exports = (io) => {
           data: { userId, roomId: room.id, character, isTurn: true, position: 'kadikoy', ...bonus },
         });
 
-        const roomState = createInitialRoomState(room.id, player.id, 1);
+        const roomState = createInitialRoomState(room.id, player.id, 1, mapType);
         roomStates.set(room.id, roomState);
         socket.join(room.id);
         connectedUsers.set(socket.id, { userId, roomId: room.id });
 
-        socket.emit('roomCreated', { room, player });
+        socket.emit('roomCreated', { room, player, mapType: roomState.mapType });
         await startTurnTimer(io, room.id, userId);
       } catch (err) {
         socket.emit('error', { message: 'Oda oluşturulamadı.' });
       }
     });
 
-    socket.on('createTestRoom', async () => {
+    socket.on('createTestRoom', async ({ mapType } = {}) => {
       try {
         const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
         const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -297,7 +402,7 @@ module.exports = (io) => {
         ]);
         const players = await prisma.player.findMany({ where: { roomId: room.id }, orderBy: { id: 'asc' } });
 
-        const roomState = createInitialRoomState(room.id, firstPlayer.id, 2);
+        const roomState = createInitialRoomState(room.id, firstPlayer.id, 2, mapType);
         roomStates.set(room.id, roomState);
         socket.join(room.id);
         connectedUsers.set(socket.id, { userId: firstUser.id, roomId: room.id, testMode: true });
@@ -350,10 +455,8 @@ module.exports = (io) => {
         connectedUsers.set(socket.id, { userId, roomId: room.id });
 
         const players = await prisma.player.findMany({ where: { roomId: room.id }, orderBy: { id: 'asc' } });
-        roomState.mapType = getMapTypeForPlayerCount(players.length);
-
         io.to(room.id).emit('playerJoined', { player });
-        socket.emit('roomJoined', { room, player, players });
+        socket.emit('roomJoined', { room, player, players, mapType: roomState.mapType });
         await emitGameState(io, room.id);
       } catch (err) {
         socket.emit('error', { message: 'Odaya katılınamadı.' });
@@ -372,9 +475,11 @@ module.exports = (io) => {
 
         const moveOptions = Array.from({ length: 6 }, (_, index) => {
           const diceValue = index + 1;
+          const moveDetails = getReachableMoveDetails(player.position, diceValue, player, roomState.mapType);
           return {
             diceValue,
-            possibleMoves: findReachableDistricts(player.position, diceValue),
+            possibleMoves: moveDetails.map((move) => move.districtId),
+            possibleMoveDetails: indexMoveDetails(moveDetails),
           };
         }).filter((option) => option.possibleMoves.length > 0);
 
@@ -382,10 +487,10 @@ module.exports = (io) => {
           return socket.emit('error', { message: 'Bu konumdan gidilebilir ilçe bulunamadı.' });
         }
 
-        const { diceValue, possibleMoves } = moveOptions[Math.floor(Math.random() * moveOptions.length)];
-        roomState.lastRoll = { userId, diceValue, possibleMoves };
+        const { diceValue, possibleMoves, possibleMoveDetails } = moveOptions[Math.floor(Math.random() * moveOptions.length)];
+        roomState.lastRoll = { userId, diceValue, possibleMoves, possibleMoveDetails };
 
-        io.to(roomId).emit('diceRolled', { userId, value: diceValue, possibleMoves });
+        io.to(roomId).emit('diceRolled', { userId, value: diceValue, possibleMoves, possibleMoveDetails });
       } catch (err) {
         console.error(err);
         socket.emit('error', { message: 'Zar atılamadı.' });
@@ -406,35 +511,49 @@ module.exports = (io) => {
           return socket.emit('error', { message: 'Bu ilçe zar sonucuna göre erişilebilir değil.' });
         }
 
+        const moveDetail = roomState.lastRoll.possibleMoveDetails?.[targetDistrictId] || {};
+        const ferryCostGreen = moveDetail.ferryRequired ? FERRY_COST_GREEN : 0;
+        if (ferryCostGreen > 0 && player.greenTickets < ferryCostGreen) {
+          return socket.emit('error', { message: 'Karşı yakaya vapurla geçmek için yeterli yeşil bilet yok.' });
+        }
+
         const districtState = roomState.districts[targetDistrictId];
         const updates = { position: targetDistrictId };
+        let nextRedTickets = player.redTickets;
+        let nextGreenTickets = player.greenTickets - ferryCostGreen;
 
         if (!districtState || districtState.remainingTurns <= 0 || !districtState.ownerId) {
-          if (player.redTickets < PURCHASE_COST_RED) {
+          if (nextRedTickets < PURCHASE_COST_RED) {
             return socket.emit('error', { message: 'Masayı kapatmak için yeterli kırmızı bilet yok.' });
           }
 
-          updates.redTickets = player.redTickets - PURCHASE_COST_RED;
+          nextRedTickets -= PURCHASE_COST_RED;
           roomState.districts[targetDistrictId] = {
             ownerId: player.id,
             remainingTurns: 3,
             type: 'normal',
           };
-          roomState.activeEvent = `${player.character} bir masayı kapattı`;
+          setStaticActiveEvent(roomState, `${player.character} bir masayı kapattı`);
         } else if (districtState.ownerId !== player.id) {
           const owner = playerList.find((item) => item.id === districtState.ownerId);
-          const payment = Math.min(player.redTickets, RENT_COST_RED);
+          const payment = Math.min(nextRedTickets, RENT_COST_RED);
 
-          updates.redTickets = player.redTickets - payment;
+          nextRedTickets -= payment;
           if (owner && payment > 0) {
             await prisma.player.update({
               where: { id: owner.id },
               data: { redTickets: owner.redTickets + payment },
             });
           }
-          roomState.activeEvent = `${player.character} çay ısmarladı`;
+          setStaticActiveEvent(roomState, `${player.character} çay ısmarladı`);
         } else {
-          roomState.activeEvent = `${player.character} kendi mekanına uğradı`;
+          setStaticActiveEvent(roomState, `${player.character} kendi mekanına uğradı`);
+        }
+
+        updates.redTickets = nextRedTickets;
+        updates.greenTickets = nextGreenTickets;
+        if (ferryCostGreen > 0) {
+          setStaticActiveEvent(roomState, `${roomState.activeEvent} - vapur kullandı`);
         }
 
         await prisma.player.update({ where: { id: player.id }, data: updates });
@@ -456,16 +575,55 @@ module.exports = (io) => {
 
         const { rates, event } = rollTicketRates(roomState.ticketRates);
         roomState.ticketRates = rates;
-        roomState.activeEvent = `Kahve falı: ${event}`;
+        const staticEvent = `Kahve falı: ${event}`;
 
         await prisma.player.update({
           where: { id: player.id },
           data: { greenTickets: player.greenTickets - FORTUNE_COST_GREEN },
         });
-        await emitGameState(io, roomId);
+        await revealActiveEvent(io, roomId, {
+          eventType: 'fortuneCoffee',
+          staticEvent,
+          player,
+          ticketRates: rates,
+          outcome: event,
+        }, 'Fincan ters çevrildi, fal bekleniyor', getFortuneFallback(event));
       } catch (err) {
         console.error(err);
         socket.emit('error', { message: 'Kahve falı çalışmadı.' });
+      }
+    });
+
+    socket.on('exchangeTickets', async ({ roomId, userId, fromColor, toColor, amount }) => {
+      try {
+        const roomState = getRoomState(roomId);
+        const player = await prisma.player.findFirst({ where: { userId, roomId } });
+        const fromField = TICKET_FIELDS[fromColor];
+        const toField = TICKET_FIELDS[toColor];
+        const sellAmount = Math.floor(Number(amount));
+
+        if (!player) return socket.emit('error', { message: 'Oyuncu bulunamadı.' });
+        if (!fromField || !toField || fromColor === toColor) return socket.emit('error', { message: 'Geçersiz bilet dönüşümü.' });
+        if (!Number.isInteger(sellAmount) || sellAmount <= 0) return socket.emit('error', { message: 'Bozdurulacak bilet miktarı geçersiz.' });
+        if (player[fromField] < sellAmount) return socket.emit('error', { message: `${getTicketName(fromColor)} biletiniz yeterli değil.` });
+
+        const sellValue = sellAmount * roomState.ticketRates[fromColor];
+        const buyAmount = Math.floor(sellValue / roomState.ticketRates[toColor]);
+        if (buyAmount <= 0) return socket.emit('error', { message: 'Bu kurla en az 1 bilet alınamıyor.' });
+
+        await prisma.player.update({
+          where: { id: player.id },
+          data: {
+            [fromField]: player[fromField] - sellAmount,
+            [toField]: player[toField] + buyAmount,
+          },
+        });
+
+        setStaticActiveEvent(roomState, `${player.character} ${sellAmount} ${getTicketName(fromColor)} bozdurup ${buyAmount} ${getTicketName(toColor)} aldı`);
+        await emitGameState(io, roomId);
+      } catch (err) {
+        console.error(err);
+        socket.emit('error', { message: 'Bilet bozdurma yapılamadı.' });
       }
     });
 
@@ -484,13 +642,20 @@ module.exports = (io) => {
 
         const [targetDistrictId] = targetEntry;
         delete roomState.districts[targetDistrictId];
-        roomState.activeEvent = `Zabıta ${targetDistrictId} masasını dağıttı`;
+        const staticEvent = `Zabıta ${targetDistrictId} masasını dağıttı`;
 
         await prisma.player.update({
           where: { id: player.id },
           data: { blueTickets: player.blueTickets - SABOTAGE_COST_BLUE },
         });
-        await emitGameState(io, roomId);
+        await revealActiveEvent(io, roomId, {
+          eventType: 'sabotageDistrict',
+          staticEvent,
+          player,
+          targetDistrictId,
+          ticketRates: roomState.ticketRates,
+          outcome: 'districtCleared',
+        }, 'Zabıta telsizi cızırdıyor', 'Zabıta esnafı denetledi, masa mühürlendi');
       } catch (err) {
         console.error(err);
         socket.emit('error', { message: 'Zabıta çağrılamadı.' });
@@ -510,29 +675,52 @@ module.exports = (io) => {
         });
 
         if (Math.random() < 0.65) {
-          const twoSteps = mapData.findReachableDistricts(player.position, 2);
-          const threeSteps = mapData.findReachableDistricts(player.position, 3);
-          const possibleTargets = [...new Set([...twoSteps, ...threeSteps])];
+          const possibleTargets = mapData.getMapDistricts(roomState.mapType)
+            .filter((district) => district.id !== player.position)
+            .map((district) => ({
+              districtId: district.id,
+              ferryRequired: false,
+              ferryCostGreen: 0,
+            }));
           
           if (possibleTargets.length > 0) {
-            const target = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
-            roomState.lastRoll = { userId, diceValue: 0, possibleMoves: [target] };
-            roomState.activeEvent = 'Taksi tuttu, rota açıldı';
-            io.to(roomId).emit('diceRolled', { userId, value: 'T', possibleMoves: [target] });
+            const possibleMoves = possibleTargets.map((target) => target.districtId);
+            const possibleMoveDetails = indexMoveDetails(possibleTargets);
+            const staticEvent = 'Taksi tuttu, rota açıldı';
+            roomState.lastRoll = { userId, diceValue: 0, possibleMoves, possibleMoveDetails };
+            io.to(roomId).emit('diceRolled', { userId, value: 'T', possibleMoves, possibleMoveDetails });
+            await revealActiveEvent(io, roomId, {
+              eventType: 'useTaxi',
+              staticEvent,
+              player,
+              ticketRates: roomState.ticketRates,
+              outcome: 'success',
+            }, 'Taksi kontağı çeviriyor', 'Taksici tamam abla dedi, rota açıldı');
+            return;
           } else {
-            roomState.activeEvent = 'Değişim saati: uygun taksi rotası yok';
-            await emitGameState(io, roomId);
+            const staticEvent = 'Değişim saati: taksici o yöne gitmedi, bilet yandı';
+            await revealActiveEvent(io, roomId, {
+              eventType: 'useTaxi',
+              staticEvent,
+              player,
+              ticketRates: roomState.ticketRates,
+              outcome: 'cancelled',
+            }, 'Taksi durağına bağlanılıyor', 'Değişim saati abla, o yöne gitmiyorum; bilet yandı');
             await advanceTurn(io, roomId, userId);
             return;
           }
         } else {
-          roomState.activeEvent = 'Değişim saati: taksi iptal';
-          await emitGameState(io, roomId);
+          const staticEvent = 'Değişim saati: taksici o yöne gitmedi, bilet yandı';
+          await revealActiveEvent(io, roomId, {
+            eventType: 'useTaxi',
+            staticEvent,
+            player,
+            ticketRates: roomState.ticketRates,
+            outcome: 'cancelled',
+          }, 'Taksi durağına bağlanılıyor', 'Değişim saati abla, o yöne gitmiyorum; bilet yandı');
           await advanceTurn(io, roomId, userId);
           return;
         }
-
-        await emitGameState(io, roomId);
       } catch (err) {
         console.error(err);
         socket.emit('error', { message: 'Taksi kullanılamadı.' });
@@ -556,6 +744,29 @@ module.exports = (io) => {
         }
       }
       socket.emit('quickMatchJoined', { queueLength: matchmakingQueue.length });
+    });
+
+    socket.on('quitTestRoom', async ({ roomId }) => {
+      try {
+        const connection = connectedUsers.get(socket.id);
+        if (!connection?.testMode || connection.roomId !== roomId) {
+          return socket.emit('error', { message: 'Sadece test modundan çıkılabilir.' });
+        }
+
+        const roomState = roomStates.get(roomId);
+        if (roomState?.timer) clearTimeout(roomState.timer);
+        roomStates.delete(roomId);
+
+        await prisma.room.update({ where: { id: roomId }, data: { status: 'finished' } });
+        await prisma.player.updateMany({ where: { roomId }, data: { isTurn: false } });
+
+        socket.leave(roomId);
+        connectedUsers.delete(socket.id);
+        socket.emit('testRoomQuit');
+      } catch (err) {
+        console.error(err);
+        socket.emit('error', { message: 'Test modundan çıkılamadı.' });
+      }
     });
 
     socket.on('disconnect', () => {

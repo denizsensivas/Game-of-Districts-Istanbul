@@ -7,12 +7,41 @@ const socket = io(API_URL);
 const freshGameSession = {
   diceValue: null,
   possibleMoves: [],
+  possibleMoveDetails: {},
   pendingMove: null,
   mapState: {},
   mapType: 'Kucuk_idli.svg',
   gameOver: false,
   rankings: [],
   activeEvent: 'Oyun başladı',
+  activeEventStatus: 'ready',
+  activeEventType: 'system',
+};
+
+const leftRoomState = {
+  ...freshGameSession,
+  user: null,
+  character: null,
+  room: null,
+  players: [],
+  myPlayer: null,
+  isTestMode: false,
+  controlledUserIds: [],
+  currentRound: 1,
+  maxRounds: 12,
+  currentTurnUserId: null,
+  turnTimeRemaining: 30,
+  turnEndsAt: null,
+  ticketRates: {
+    red: 1,
+    blue: 2,
+    green: 4
+  },
+};
+
+export const MAP_TYPES = {
+  small: 'Kucuk_idli.svg',
+  big: 'buyuk.svg',
 };
 
 const useGameStore = create((set, get) => ({
@@ -28,6 +57,8 @@ const useGameStore = create((set, get) => ({
   maxRounds: 12,
   mapType: 'Kucuk_idli.svg',
   activeEvent: 'Oyun başladı',
+  activeEventStatus: 'ready',
+  activeEventType: 'system',
   gameOver: false,
   rankings: [],
   
@@ -44,6 +75,7 @@ const useGameStore = create((set, get) => ({
   turnEndsAt: null,
   diceValue: null,
   possibleMoves: [],
+  possibleMoveDetails: {},
   pendingMove: null, // Hedef ilçe seçildiğinde onay bekleyen durum
   mapState: {}, // districtId -> { ownerId, remainingTurns, type }
 
@@ -57,15 +89,23 @@ const useGameStore = create((set, get) => ({
     socket.emit('joinLobby', { username, character });
   },
 
-  createRoom: () => {
+  createRoom: (mapType = MAP_TYPES.small) => {
     const { user, character } = get();
     if (user) {
-      socket.emit('createRoom', { userId: user.id, character });
+      socket.emit('createRoom', { userId: user.id, character, mapType });
     }
   },
 
-  createTestRoom: () => {
-    socket.emit('createTestRoom');
+  createTestRoom: (mapType = MAP_TYPES.small) => {
+    socket.emit('createTestRoom', { mapType });
+  },
+
+  quitTestMode: () => {
+    const { room, isTestMode } = get();
+    if (room?.id && isTestMode) {
+      socket.emit('quitTestRoom', { roomId: room.id });
+    }
+    set(leftRoomState);
   },
 
   joinRoom: (inviteCode) => {
@@ -107,6 +147,14 @@ const useGameStore = create((set, get) => ({
     }
   },
 
+  exchangeTickets: ({ fromColor, toColor, amount }) => {
+    const { room, getActiveUserId } = get();
+    const userId = getActiveUserId();
+    if (room && userId) {
+      socket.emit('exchangeTickets', { roomId: room.id, userId, fromColor, toColor, amount });
+    }
+  },
+
   movePlayer: (targetDistrictId) => {
     // Backend'e hemen göndermek yerine pending state'e al
     set({ pendingMove: targetDistrictId });
@@ -120,7 +168,6 @@ const useGameStore = create((set, get) => ({
     const { room, pendingMove, getActiveUserId } = get();
     const userId = getActiveUserId();
     if (room && userId && pendingMove) {
-      set({ possibleMoves: [], pendingMove: null });
       socket.emit('commitMove', { roomId: room.id, userId, targetDistrictId: pendingMove });
     }
   },
@@ -141,12 +188,28 @@ const useGameStore = create((set, get) => ({
       set({ user, character });
     });
 
-    socket.on('roomCreated', ({ room, player }) => {
-      set({ ...freshGameSession, room, myPlayer: player, players: [player], isTestMode: false, controlledUserIds: [] });
+    socket.on('roomCreated', ({ room, player, mapType }) => {
+      set({
+        ...freshGameSession,
+        room,
+        myPlayer: player,
+        players: [player],
+        mapType: mapType || MAP_TYPES.small,
+        isTestMode: false,
+        controlledUserIds: [],
+      });
     });
 
-    socket.on('roomJoined', ({ room, player, players }) => {
-      set({ ...freshGameSession, room, myPlayer: player, players, isTestMode: false, controlledUserIds: [] });
+    socket.on('roomJoined', ({ room, player, players, mapType }) => {
+      set({
+        ...freshGameSession,
+        room,
+        myPlayer: player,
+        players,
+        mapType: mapType || MAP_TYPES.small,
+        isTestMode: false,
+        controlledUserIds: [],
+      });
     });
 
     socket.on('testRoomCreated', ({ room, user, player, players, mapType, controlledUserIds }) => {
@@ -157,7 +220,7 @@ const useGameStore = create((set, get) => ({
         room,
         myPlayer: player,
         players,
-        mapType: mapType || 'Kucuk_idli.svg',
+        mapType: mapType || MAP_TYPES.small,
         isTestMode: true,
         controlledUserIds,
       });
@@ -167,26 +230,29 @@ const useGameStore = create((set, get) => ({
       set((state) => ({ players: [...state.players, player] }));
     });
 
-    socket.on('diceRolled', ({ userId, value, possibleMoves }) => {
+    socket.on('diceRolled', ({ userId, value, possibleMoves, possibleMoveDetails }) => {
       set({ diceValue: value });
       const { isTestMode, controlledUserIds, user } = get();
       const controlsPlayer = isTestMode ? controlledUserIds.includes(userId) : user?.id === userId;
       if (controlsPlayer && possibleMoves) {
-        set({ possibleMoves });
+        set({ possibleMoves, possibleMoveDetails: possibleMoveDetails || {} });
       }
     });
 
     socket.on('playerMoved', ({ userId, targetDistrictId }) => {
+      const { isTestMode, controlledUserIds, user } = get();
+      const controlsPlayer = isTestMode ? controlledUserIds.includes(userId) : user?.id === userId;
       set((state) => ({
         players: state.players.map(p => 
           p.userId === userId ? { ...p, position: targetDistrictId } : p
         ),
-        myPlayer: state.myPlayer?.userId === userId ? { ...state.myPlayer, position: targetDistrictId } : state.myPlayer
+        myPlayer: state.myPlayer?.userId === userId ? { ...state.myPlayer, position: targetDistrictId } : state.myPlayer,
+        ...(controlsPlayer ? { possibleMoves: [], possibleMoveDetails: {}, pendingMove: null } : {})
       }));
     });
 
     socket.on('turnChanged', ({ currentTurnUserId }) => {
-      set({ currentTurnUserId, diceValue: null, possibleMoves: [], pendingMove: null });
+      set({ currentTurnUserId, diceValue: null, possibleMoves: [], possibleMoveDetails: {}, pendingMove: null });
       set((state) => ({
         players: state.players.map(p => ({ ...p, isTurn: p.userId === currentTurnUserId })),
         myPlayer: state.isTestMode
@@ -223,14 +289,21 @@ const useGameStore = create((set, get) => ({
       ticketRates,
       mapType,
       activeEvent,
+      activeEventStatus,
+      activeEventType,
       turnEndsAt,
       mapState,
-      gameOver
+      gameOver,
+      activeRoll
     }) => {
       const { isTestMode, user } = get();
       const myPlayer = isTestMode
         ? players.find(p => p.userId === currentTurnUserId) || players[0]
         : players.find(p => p.userId === user?.id);
+      const controlsActiveRoll = Boolean(
+        activeRoll?.userId &&
+        (isTestMode ? activeRoll.userId === currentTurnUserId : activeRoll.userId === user?.id)
+      );
       set({
         players,
         myPlayer: myPlayer
@@ -242,9 +315,16 @@ const useGameStore = create((set, get) => ({
         mapType: mapType || get().mapType,
         ticketRates,
         activeEvent,
+        activeEventStatus: activeEventStatus || 'ready',
+        activeEventType: activeEventType || 'system',
         turnEndsAt,
         mapState,
         gameOver,
+        ...(controlsActiveRoll ? {
+          diceValue: activeRoll.diceValue || 'T',
+          possibleMoves: activeRoll.possibleMoves || [],
+          possibleMoveDetails: activeRoll.possibleMoveDetails || {},
+        } : {}),
       });
     });
 
@@ -253,6 +333,7 @@ const useGameStore = create((set, get) => ({
         rankings,
         gameOver: true,
         possibleMoves: [],
+        possibleMoveDetails: {},
         pendingMove: null,
         diceValue: null,
       });

@@ -2,18 +2,18 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #FF5A5F;
-  --color-secondary: #00A699;
-  --color-accent: #FC642D;
+  --color-primary: #ff6b6b;
+  --color-secondary: #16b6aa;
+  --color-accent: #f59e0b;
   --color-ticket-red: #E63946;
   --color-ticket-blue: #457B9D;
   --color-ticket-green: #2A9D8F;
-  --color-background: #F7F7F9;
-  --color-surface: #FFFFFF;
+  --color-background: #dbf2fe;
+  --color-surface: #fff8e8;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: 'Baloo 2', ui-rounded, system-ui, sans-serif;
   background-color: var(--color-background);
   color: #333;
   margin: 0;
@@ -25,7 +25,30 @@ body {
 
 /* Base button styles to mimic mobile game feel */
 .game-btn {
-  @apply font-bold rounded-xl shadow-md transition-all duration-150 active:scale-95 active:shadow-sm;
+  @apply font-black rounded-2xl shadow-md transition-all duration-150 active:scale-95 active:shadow-sm;
+}
+
+.game-panel {
+  background: linear-gradient(180deg, #fffdf6 0%, #fff2d2 100%);
+  border: 4px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 0 rgba(88, 64, 36, 0.13), 0 18px 28px rgba(51, 63, 84, 0.14);
+}
+
+.map-decoration-layer text {
+  font-family: 'Baloo 2', ui-rounded, system-ui, sans-serif !important;
+  font-weight: 800;
+  text-transform: uppercase;
+  fill: #3b2417;
+  stroke: #fff4d7;
+  stroke-width: 4px;
+  paint-order: stroke;
+  filter: drop-shadow(0 2px 0 rgba(40, 29, 20, 0.24));
+}
+
+.game-display-text {
+  font-family: 'Baloo 2', ui-rounded, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .game-map,

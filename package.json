@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "svg-path-bounding-box": "^1.0.4"
+  }
+}

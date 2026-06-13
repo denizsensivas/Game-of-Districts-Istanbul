@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import useGameStore from '../../store/gameStore';
+import useGameStore, { MAP_TYPES } from '../../store/gameStore';
 import { motion as Motion } from 'framer-motion';
-import { FlaskConical, Users, UserPlus, LogIn } from 'lucide-react';
+import { FlaskConical, LogIn, Map, Users, UserPlus } from 'lucide-react';
 import { getCharacterTheme } from '../../utils/characterColors';
 
 const characters = [
@@ -14,6 +14,7 @@ const characters = [
 export default function Lobby() {
   const [username, setUsername] = useState('');
   const [selectedCharacter, setSelectedCharacter] = useState(characters[0].id);
+  const [selectedMapType, setSelectedMapType] = useState(MAP_TYPES.small);
   const [inviteCode, setInviteCode] = useState('');
   
   const { user, joinLobby, createRoom, joinRoom, createTestRoom } = useGameStore();
@@ -30,14 +31,63 @@ export default function Lobby() {
     }
   };
 
+  const mapOptions = [
+    { id: MAP_TYPES.small, label: 'Küçük', description: 'Daha hızlı ve yakın oyun' },
+    { id: MAP_TYPES.big, label: 'Büyük', description: 'Daha geniş masa alanı' },
+  ];
+
+  const testModeButtons = canSeeTestMode ? (
+    <div className="grid grid-cols-2 gap-2">
+      {mapOptions.map((option) => (
+        <button
+          key={`test-${option.id}`}
+          type="button"
+          onClick={() => createTestRoom(option.id)}
+          className="py-4 bg-[#3b2417] text-white text-sm game-btn flex flex-col items-center justify-center gap-1 shadow-[0_7px_0_#22140d]"
+        >
+          <span className="flex items-center justify-center gap-2 font-black">
+            <FlaskConical size={20} /> Test
+          </span>
+          <span className="text-xs font-black opacity-90">{option.label} Harita</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  const mapPicker = (
+    <div>
+      <label className="block text-sm font-bold mb-2">Harita Boyutu</label>
+      <div className="grid grid-cols-2 gap-2">
+        {mapOptions.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => setSelectedMapType(option.id)}
+            className={`p-3 rounded-2xl border-2 text-left transition-all ${
+              selectedMapType === option.id
+                ? 'bg-[#fff4d7] border-[var(--color-accent)] shadow-[0_4px_0_#d89313]'
+                : 'bg-gray-50 border-transparent hover:bg-gray-100'
+            }`}
+          >
+            <div className="flex items-center gap-2 font-black">
+              <Map size={18} />
+              <span>{option.label}</span>
+            </div>
+            <div className="text-[10px] text-gray-600 leading-tight mt-1">{option.description}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-accent)] text-white">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-[#dbf2fe] text-white">
       <Motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 text-gray-800"
+        className="w-full max-w-md game-panel rounded-[2rem] p-6 text-[#3b2417]"
       >
-        <h1 className="text-3xl font-black text-center mb-6 text-[var(--color-primary)]">Game of Districts</h1>
+        <h1 className="text-3xl font-black text-center mb-6 text-[#3b2417] drop-shadow-[0_3px_0_#fff4d7]">Game of Districts</h1>
         
         {!user ? (
           <form onSubmit={handleLogin} className="space-y-4">
@@ -47,7 +97,7 @@ export default function Lobby() {
                 type="text" 
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full p-3 rounded-xl border-2 border-gray-200 focus:border-[var(--color-primary)] outline-none text-lg"
+                className="w-full p-3 rounded-2xl border-4 border-white focus:border-[var(--color-primary)] outline-none text-lg bg-[#fffdf6] shadow-inner"
                 placeholder="Örn: VapurluMarti"
                 required
               />
@@ -60,7 +110,7 @@ export default function Lobby() {
                   <div 
                     key={c.id}
                     onClick={() => setSelectedCharacter(c.id)}
-                    className={`p-2 rounded-xl border-2 cursor-pointer transition-all ${
+                    className={`p-2 rounded-2xl border-2 cursor-pointer transition-all ${
                       selectedCharacter === c.id ? getCharacterTheme(c.id).className : 'bg-gray-50 border-transparent hover:bg-gray-100'
                     }`}
                   >
@@ -71,31 +121,27 @@ export default function Lobby() {
               </div>
             </div>
 
-            <button type="submit" className="w-full py-4 bg-[var(--color-secondary)] text-white text-xl game-btn flex items-center justify-center gap-2">
+            {mapPicker}
+
+            <button type="submit" className="w-full py-4 bg-[var(--color-secondary)] text-white text-xl game-btn flex items-center justify-center gap-2 shadow-[0_7px_0_#0f8078]">
               <LogIn size={24} /> Oyuna Gir
             </button>
 
-            {canSeeTestMode && (
-              <button type="button" onClick={createTestRoom} className="w-full py-4 bg-gray-900 text-white text-xl game-btn flex items-center justify-center gap-2">
-                <FlaskConical size={24} /> Test Modu (2 Oyuncu)
-              </button>
-            )}
+            {testModeButtons}
           </form>
         ) : (
           <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            <div className="text-center p-3 bg-gray-100 rounded-xl">
+            <div className="text-center p-3 bg-[#fffdf6] rounded-2xl border-2 border-white">
               <p className="text-sm text-gray-500">Hoş geldin,</p>
               <p className="text-xl font-bold">{user.username}</p>
             </div>
             
             <div className="space-y-3">
-              {canSeeTestMode && (
-                <button onClick={createTestRoom} className="w-full py-4 bg-gray-900 text-white text-xl game-btn flex items-center justify-center gap-2">
-                  <FlaskConical size={24} /> Test Modu (2 Oyuncu)
-                </button>
-              )}
+              {mapPicker}
 
-              <button onClick={createRoom} className="w-full py-4 bg-[var(--color-primary)] text-white text-xl game-btn flex items-center justify-center gap-2">
+              {testModeButtons}
+
+              <button onClick={() => createRoom(selectedMapType)} className="w-full py-4 bg-[var(--color-primary)] text-white text-xl game-btn flex items-center justify-center gap-2 shadow-[0_7px_0_#d94c4c]">
                 <UserPlus size={24} /> Oda Kur (Max 8)
               </button>
               
