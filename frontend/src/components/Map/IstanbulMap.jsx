@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion as Motion } from 'framer-motion';
 import { Hourglass, Minus, Plus } from 'lucide-react';
 import useGameStore from '../../store/gameStore';
 import { districtsData } from './mapData';
 import { getCharacterTheme } from '../../utils/characterColors';
+import { getCharacterMeta } from '../../utils/characters';
 
 const STATUS_DARK = '#111827';
+const BIG_MAP_LANDMARK_EDITS_KEY = 'bigMapLandmarkEdits:buyuk_idli:v2';
 
 function getDistrictPathIndex(district, mapType) {
   return district.mapPaths?.[mapType] ?? district.pathIndex;
@@ -56,6 +57,82 @@ function getLabelFontSize(name) {
   return 34;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getPathNodeBounds(pathNode, viewBoxParts) {
+  if (typeof document === 'undefined') return null;
+
+  const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  tempSvg.setAttribute(
+    'viewBox',
+    `${viewBoxParts.minX} ${viewBoxParts.minY} ${viewBoxParts.width} ${viewBoxParts.height}`
+  );
+  tempSvg.setAttribute('width', '0');
+  tempSvg.setAttribute('height', '0');
+  tempSvg.style.position = 'absolute';
+  tempSvg.style.visibility = 'hidden';
+  tempSvg.style.pointerEvents = 'none';
+
+  const clone = pathNode.cloneNode(false);
+  tempSvg.appendChild(clone);
+  document.body.appendChild(tempSvg);
+
+  try {
+    const box = clone.getBBox();
+    if (!Number.isFinite(box.x) || box.width <= 0 || box.height <= 0) return null;
+    return {
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+      centerX: box.x + (box.width / 2),
+      centerY: box.y + (box.height / 2),
+    };
+  } catch {
+    return null;
+  } finally {
+    tempSvg.remove();
+  }
+}
+
+function getLabelMetrics(district, path, svgMap) {
+  const bounds = path?.bounds;
+  const fallbackPoint = getMapPoint(district, svgMap);
+  const isBigMap = svgMap.mapType === 'buyuk.svg';
+  const point = district.labelPoints?.[svgMap.mapType] || (isBigMap
+    ? fallbackPoint
+    : bounds ? { x: bounds.centerX, y: bounds.centerY } : fallbackPoint);
+  const name = district.name.toLocaleUpperCase('tr-TR');
+  const baseFontSize = district.labelSizeByMap?.[svgMap.mapType] || district.labelSize || getLabelFontSize(district.name);
+  const labelWidth = district.labelWidthByMap?.[svgMap.mapType] || district.labelWidth;
+
+  if (!bounds) {
+    return {
+      ...point,
+      fontSize: baseFontSize,
+      textLength: labelWidth,
+      name,
+    };
+  }
+
+  const widthRatio = isBigMap ? 0.86 : 0.72;
+  const heightRatio = isBigMap ? 0.46 : 0.3;
+  const minWidth = isBigMap ? 58 : 42;
+  const maxWidth = clamp(bounds.width * widthRatio, minWidth, labelWidth || bounds.width * widthRatio);
+  const widthFitFontSize = maxWidth / Math.max(name.length * 0.54, 1);
+  const heightFitFontSize = bounds.height * heightRatio;
+  const fontSize = clamp(Math.min(baseFontSize, widthFitFontSize, heightFitFontSize), 9, baseFontSize);
+
+  return {
+    ...point,
+    fontSize: Number(fontSize.toFixed(1)),
+    textLength: Number(maxWidth.toFixed(1)),
+    name,
+  };
+}
+
 function getMapPoint(item, svgMap) {
   const mapPoint = item.mapPoints?.[svgMap.mapType];
   if (mapPoint) return mapPoint;
@@ -63,6 +140,29 @@ function getMapPoint(item, svgMap) {
   return {
     x: svgMap.minX + (item.x / 100) * svgMap.width,
     y: svgMap.minY + (item.y / 100) * svgMap.height,
+  };
+}
+
+function getPlayerMarkerPoint(district, path, svgMap) {
+  const markerPoint = district.markerPoints?.[svgMap.mapType];
+  if (markerPoint) return markerPoint;
+
+  const labelPoint = getLabelMetrics(district, path, svgMap);
+  if (!path?.bounds) return labelPoint;
+
+  const { bounds } = path;
+  const markerRadius = 17;
+  const isBigMap = svgMap.mapType === 'buyuk.svg';
+  const xOffset = isBigMap
+    ? Math.min(Math.max(bounds.width * 0.22, 22), 42)
+    : Math.min(Math.max(bounds.width * 0.2, 18), 30);
+  const yOffset = isBigMap
+    ? Math.min(Math.max(bounds.height * 0.2, 18), 34)
+    : -Math.min(Math.max(bounds.height * 0.22, 16), 28);
+
+  return {
+    x: clamp(labelPoint.x + xOffset, bounds.x + markerRadius, bounds.x + bounds.width - markerRadius),
+    y: clamp(labelPoint.y + yOffset, bounds.y + markerRadius, bounds.y + bounds.height - markerRadius),
   };
 }
 
@@ -130,6 +230,10 @@ const smallToBigLandmarkTransform = {
   yOffset: 142.1686427123,
 };
 
+const bigMapLandmarkPointOverrides = {
+  ortakoy: { x: 807, y: 501 },
+};
+
 function projectSmallMapPointToBigMap({ x, y }) {
   return {
     x: (smallToBigLandmarkTransform.xScale * x) + (smallToBigLandmarkTransform.xSkew * y) + smallToBigLandmarkTransform.xOffset,
@@ -141,6 +245,18 @@ function replaceTranslate(transform, point) {
   return transform.replace(/translate\(\s*[-.\d]+[,\s]+[-.\d]+\s*\)/, (
     `translate(${Number(point.x.toFixed(2))} ${Number(point.y.toFixed(2))})`
   ));
+}
+
+function getMapAssetName(mapType) {
+  return mapType === 'buyuk.svg' ? 'buyuk_idli.svg' : mapType;
+}
+
+function getDefaultZoom(mapType) {
+  return mapType === 'buyuk.svg' ? 1 : 1.5;
+}
+
+function getDefaultPan(mapType) {
+  return mapType === 'buyuk.svg' ? { x: 0, y: 0 } : { x: -100, y: -100 };
 }
 
 const svgLabelCorrections = {
@@ -185,7 +301,57 @@ function correctSvgLabel(labelGroup, district, documentNode, viewBoxParts) {
   labelGroup.replaceChildren(replacementText);
 }
 
-function parseMapSvg(svgText, mapType) {
+function projectBigMapLandmarks(svgNode) {
+  svgNode.querySelectorAll('image').forEach((imageNode) => {
+    const smallMapPoint = smallMapLandmarkPoints[imageNode.id];
+    const transform = imageNode.getAttribute('transform');
+    if (smallMapPoint && transform?.includes('translate(')) {
+      imageNode.setAttribute('transform', replaceTranslate(transform, projectSmallMapPointToBigMap(smallMapPoint)));
+    }
+  });
+}
+
+function getLandmarksMarkup(svgText, mapType, serializer) {
+  const normalizedSvgText = svgText.replaceAll(/xlink:href="([^"]+)"/g, 'xlink:href="/$1" href="/$1"');
+  const parser = new window.DOMParser();
+  const documentNode = parser.parseFromString(normalizedSvgText, 'image/svg+xml');
+  const landmarksNode = documentNode.querySelector('#landmarks');
+
+  if (!landmarksNode) return '';
+  if (mapType === 'buyuk.svg') projectBigMapLandmarks(landmarksNode);
+
+  return serializer.serializeToString(landmarksNode);
+}
+
+function parseLandmarkItems(svgText, mapType) {
+  if (!svgText || mapType !== 'buyuk.svg') return [];
+
+  const normalizedSvgText = svgText.replaceAll(/xlink:href="([^"]+)"/g, 'xlink:href="/$1" href="/$1"');
+  const parser = new window.DOMParser();
+  const documentNode = parser.parseFromString(normalizedSvgText, 'image/svg+xml');
+  const landmarksNode = documentNode.querySelector('#landmarks');
+  if (!landmarksNode) return [];
+
+  return Array.from(landmarksNode.querySelectorAll('image')).map((imageNode) => {
+    const id = imageNode.id;
+    const href = imageNode.getAttribute('href') || imageNode.getAttribute('xlink:href') || '';
+
+    const transform = imageNode.getAttribute('transform') || '';
+    const correctedTransform = bigMapLandmarkPointOverrides[id] && transform.includes('translate(')
+      ? replaceTranslate(transform, bigMapLandmarkPointOverrides[id])
+      : transform;
+
+    return {
+      id,
+      href,
+      width: imageNode.getAttribute('width') || '1254',
+      height: imageNode.getAttribute('height') || '1254',
+      transform: correctedTransform,
+    };
+  });
+}
+
+function parseMapSvg(svgText, mapType, landmarkSvgText = '') {
   const normalizedSvgText = svgText.replaceAll(/xlink:href="([^"]+)"/g, 'xlink:href="/$1" href="/$1"');
   const viewBoxMatch = svgText.match(/viewBox="([^"]+)"/);
   const viewBox = viewBoxMatch?.[1] || '0 0 1094 577';
@@ -208,6 +374,7 @@ function parseMapSvg(svgText, mapType) {
   const districtSvgIds = new Set(districtsData.map((district) => normalizeSvgId(district.svgId || district.id)));
   let decorationMarkup = '';
   let hasSvgLabels = false;
+  let pathBoundsByIndex = [];
 
   if (typeof window !== 'undefined' && window.DOMParser && window.XMLSerializer) {
     const parser = new window.DOMParser();
@@ -215,6 +382,9 @@ function parseMapSvg(svgText, mapType) {
     const svgNode = documentNode.querySelector('svg');
 
     if (svgNode) {
+      pathBoundsByIndex = Array.from(svgNode.querySelectorAll('path')).map((pathNode) => (
+        getPathNodeBounds(pathNode, viewBoxParts)
+      ));
       svgNode.querySelector('#marmaradenizi')?.remove();
       Array.from(svgNode.children).forEach((childNode) => {
         if (childNode.tagName.toLowerCase() === 'rect') childNode.remove();
@@ -233,19 +403,20 @@ function parseMapSvg(svgText, mapType) {
         });
       }
       if (mapType === 'buyuk.svg') {
-        svgNode.querySelectorAll('image').forEach((imageNode) => {
-          const smallMapPoint = smallMapLandmarkPoints[imageNode.id];
-          const transform = imageNode.getAttribute('transform');
-          if (smallMapPoint && transform?.includes('translate(')) {
-            imageNode.setAttribute('transform', replaceTranslate(transform, projectSmallMapPointToBigMap(smallMapPoint)));
-          }
+        svgNode.querySelectorAll('text').forEach((textNode) => {
+          const labelGroup = textNode.closest('g[id$="_x5F_label"]');
+          if (labelGroup) labelGroup.remove();
+          else textNode.remove();
         });
       }
+      if (mapType === 'buyuk.svg') projectBigMapLandmarks(svgNode);
       hasSvgLabels = Boolean(svgNode.querySelector('text'));
 
       const serializer = new window.XMLSerializer();
       const landmarksNode = svgNode.querySelector('#landmarks');
-      const landmarksMarkup = landmarksNode ? serializer.serializeToString(landmarksNode) : '';
+      const landmarksMarkup = mapType === 'buyuk.svg' ? '' : landmarksNode
+        ? serializer.serializeToString(landmarksNode)
+        : landmarkSvgText ? getLandmarksMarkup(landmarkSvgText, mapType, serializer) : '';
       landmarksNode?.remove();
       const labelAndDecorationMarkup = Array.from(svgNode.childNodes)
         .map((node) => serializer.serializeToString(node))
@@ -259,20 +430,25 @@ function parseMapSvg(svgText, mapType) {
     ...viewBoxParts,
     mapType,
     paths: pathTags
-      .map((match, index) => ({
-        index,
-        id: getSvgAttribute(match[0], 'id'),
-        d: getSvgAttribute(match[0], 'd'),
-        fill: getPathFill(match[0], styleFills),
-        stroke: getSvgAttribute(match[0], 'stroke') || 'white',
-        strokeWidth: Number(getSvgAttribute(match[0], 'stroke-width')) || 1,
-        district: districtBySvgId.get(normalizeSvgId(getSvgAttribute(match[0], 'id'))) || districtByPathIndex.get(index) || null,
-      }))
+      .map((match, index) => {
+        const id = getSvgAttribute(match[0], 'id');
+        return {
+          index,
+          id,
+          d: getSvgAttribute(match[0], 'd'),
+          fill: getPathFill(match[0], styleFills),
+          stroke: getSvgAttribute(match[0], 'stroke') || 'white',
+          strokeWidth: Number(getSvgAttribute(match[0], 'stroke-width')) || 1,
+          district: districtBySvgId.get(normalizeSvgId(id)) || districtByPathIndex.get(index) || null,
+          bounds: pathBoundsByIndex[index] || null,
+        };
+      })
       .filter((path) => isPathInViewBox(path.d, viewBoxParts))
       .filter((path) => path.d),
     backgroundFill,
     decorationMarkup,
     hasSvgLabels,
+    landmarks: parseLandmarkItems(landmarkSvgText, mapType),
   };
 }
 
@@ -287,29 +463,80 @@ export default function IstanbulMap() {
     backgroundFill: 'white',
     decorationMarkup: '',
     hasSvgLabels: false,
+    landmarks: [],
   });
-  const [zoom, setZoom] = useState(1.5);
+  const [landmarkEdits, setLandmarkEdits] = useState(() => {
+    if (typeof window === 'undefined') return {};
+
+    try {
+      return JSON.parse(window.localStorage.getItem(BIG_MAP_LANDMARK_EDITS_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [zoomByMapType, setZoomByMapType] = useState({});
+  const [panByMapType, setPanByMapType] = useState({});
   const constraintsRef = useRef(null);
+  const mapLayerRef = useRef(null);
+  const svgRef = useRef(null);
+  const activeLandmarkRef = useRef(null);
+  const dragPanRef = useRef(null);
+  const suppressMapClickRef = useRef(false);
+  const lastMoveSyncRef = useRef(null);
 
-  const { possibleMoves, possibleMoveDetails, movePlayer, players, mapState, mapType } = useGameStore();
-
-  useEffect(() => {
-    setZoom(mapType === 'buyuk.svg' ? 1 : 1.5);
-  }, [mapType]);
+  const {
+    possibleMoves,
+    possibleMoveDetails,
+    movePlayer,
+    players,
+    mapState,
+    mapType,
+    diceValue,
+    currentTurnUserId,
+    getActiveUserId,
+    room,
+    syncGameState,
+  } = useGameStore();
+  const zoom = zoomByMapType[mapType] || getDefaultZoom(mapType);
+  const pan = panByMapType[mapType] || getDefaultPan(mapType);
+  const landmarkEditorActive =
+    mapType === 'buyuk.svg' &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('landmarkEditor') === '1';
 
   useEffect(() => {
     let isMounted = true;
 
-    fetch(`/${mapType}`)
+    fetch(`/${getMapAssetName(mapType)}`)
       .then((response) => response.text())
       .then((svgText) => {
-        if (isMounted) setSvgMap(parseMapSvg(svgText, mapType));
+        if (isMounted) setSvgMap(parseMapSvg(svgText, mapType, svgText));
       });
 
     return () => {
       isMounted = false;
     };
   }, [mapType]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(BIG_MAP_LANDMARK_EDITS_KEY, JSON.stringify(landmarkEdits));
+  }, [landmarkEdits]);
+
+  useEffect(() => {
+    const activeUserId = getActiveUserId();
+    const syncKey = `${room?.id || ''}:${currentTurnUserId || ''}:${diceValue || ''}`;
+    if (
+      room?.id &&
+      diceValue &&
+      activeUserId === currentTurnUserId &&
+      possibleMoves.length === 0 &&
+      lastMoveSyncRef.current !== syncKey
+    ) {
+      lastMoveSyncRef.current = syncKey;
+      syncGameState();
+    }
+  }, [currentTurnUserId, diceValue, getActiveUserId, possibleMoves.length, room?.id, syncGameState]);
 
   const playersByDistrict = useMemo(() => {
     return players.reduce((acc, player) => {
@@ -319,9 +546,173 @@ export default function IstanbulMap() {
     }, {});
   }, [players]);
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const pathsByDistrictId = useMemo(() => {
+    return new Map(svgMap.paths.filter((path) => path.district).map((path) => [path.district.id, path]));
+  }, [svgMap.paths]);
 
-  const updateZoom = (nextZoom) => {
-    setZoom(Math.min(2.8, Math.max(0.8, Number(nextZoom.toFixed(2)))));
+  const updateZoom = (nextZoom, anchorPoint = null) => {
+    const nextClampedZoom = Math.min(2.8, Math.max(0.8, Number(nextZoom.toFixed(2))));
+
+    setZoomByMapType((current) => ({
+      ...current,
+      [mapType]: nextClampedZoom,
+    }));
+
+    if (!anchorPoint || nextClampedZoom === zoom || !constraintsRef.current || !mapLayerRef.current) return;
+
+    const containerRect = constraintsRef.current.getBoundingClientRect();
+    const layerNode = mapLayerRef.current;
+    const layerCenter = {
+      x: layerNode.offsetLeft + (layerNode.offsetWidth / 2),
+      y: layerNode.offsetTop + (layerNode.offsetHeight / 2),
+    };
+    const pointer = {
+      x: anchorPoint.clientX - containerRect.left,
+      y: anchorPoint.clientY - containerRect.top,
+    };
+    const zoomRatio = nextClampedZoom / zoom;
+
+    setPanByMapType((current) => {
+      const currentPan = current[mapType] || pan;
+      return {
+        ...current,
+        [mapType]: {
+          x: pointer.x - layerCenter.x - (zoomRatio * (pointer.x - layerCenter.x - currentPan.x)),
+          y: pointer.y - layerCenter.y - (zoomRatio * (pointer.y - layerCenter.y - currentPan.y)),
+        },
+      };
+    });
+  };
+
+  const updatePan = (nextPan) => {
+    setPanByMapType((current) => ({
+      ...current,
+      [mapType]: nextPan,
+    }));
+  };
+
+  const applyMapTransform = (nextPan, nextZoom = zoom) => {
+    if (!mapLayerRef.current) return;
+    mapLayerRef.current.style.transform = `translate3d(${nextPan.x}px, ${nextPan.y}px, 0) scale(${nextZoom})`;
+  };
+
+  const finishMapDrag = (event) => {
+    const dragState = dragPanRef.current;
+    if (!dragState) return;
+
+    dragPanRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.currentTarget.style.cursor = '';
+
+    if (dragState.didDrag) {
+      updatePan(dragState.lastPan);
+      window.setTimeout(() => {
+        suppressMapClickRef.current = false;
+      }, 0);
+    }
+  };
+
+  const handleMapPointerDown = (event) => {
+    if (landmarkEditorActive || event.button !== 0) return;
+
+    dragPanRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startPan: pan,
+      lastPan: pan,
+      didDrag: false,
+    };
+  };
+
+  const handleMapPointerMove = (event) => {
+    const dragState = dragPanRef.current;
+    if (!dragState) return;
+
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    if (!dragState.didDrag && Math.hypot(dx, dy) < 4) return;
+
+    if (!dragState.didDrag) {
+      event.currentTarget.setPointerCapture?.(dragState.pointerId);
+      event.currentTarget.style.cursor = 'grabbing';
+    }
+    dragState.didDrag = true;
+    suppressMapClickRef.current = true;
+    dragState.lastPan = {
+      x: dragState.startPan.x + dx,
+      y: dragState.startPan.y + dy,
+    };
+    applyMapTransform(dragState.lastPan);
+    event.preventDefault();
+  };
+
+  const handleMapPointerCancel = (event) => {
+    const dragState = dragPanRef.current;
+    dragPanRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.currentTarget.style.cursor = '';
+
+    if (dragState) applyMapTransform(pan);
+    suppressMapClickRef.current = false;
+  };
+
+  const exportLandmarkEdits = () => {
+    const exportText = JSON.stringify(landmarkEdits, null, 2);
+    window.navigator.clipboard?.writeText(exportText);
+    console.log('bigMapLandmarkEdits', exportText);
+  };
+
+  const getSvgEventPoint = (event) => {
+    const svgNode = svgRef.current;
+    if (!svgNode) return null;
+
+    const point = svgNode.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    return point.matrixTransform(svgNode.getScreenCTM().inverse());
+  };
+
+  const moveActiveLandmark = (event) => {
+    const landmarkId = activeLandmarkRef.current;
+    if (!landmarkId || !svgRef.current) return;
+
+    const point = getSvgEventPoint(event);
+    if (!point) return;
+
+    const nextPoint = {
+      x: Number(point.x.toFixed(2)),
+      y: Number(point.y.toFixed(2)),
+    };
+    const imageNode = svgRef.current.querySelector(`.big-map-landmark-image[id="${landmarkId}"]`);
+    if (imageNode) {
+      const baseTransform = imageNode.dataset.baseTransform || imageNode.getAttribute('transform') || '';
+      imageNode.dataset.baseTransform = baseTransform;
+      imageNode.setAttribute('transform', replaceTranslate(baseTransform, nextPoint));
+    }
+
+    setLandmarkEdits((current) => ({
+      ...current,
+      [landmarkId]: nextPoint,
+    }));
+  };
+
+  const handleLandmarkPointerDown = (event) => {
+    if (!landmarkEditorActive) return;
+
+    activeLandmarkRef.current = event.currentTarget.id;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+    moveActiveLandmark(event);
+  };
+
+  const handleLandmarkPointerUp = () => {
+    activeLandmarkRef.current = null;
   };
 
   return (
@@ -329,10 +720,11 @@ export default function IstanbulMap() {
       className="game-map w-full h-full relative bg-[#dbf2fe] overflow-hidden select-none"
       ref={constraintsRef}
       onWheel={(event) => {
-        if (event.ctrlKey || event.metaKey || event.shiftKey) {
-          event.preventDefault();
-          updateZoom(zoom + (event.deltaY > 0 ? -0.12 : 0.12));
-        }
+        event.preventDefault();
+        updateZoom(zoom + (event.deltaY > 0 ? -0.12 : 0.12), {
+          clientX: event.clientX,
+          clientY: event.clientY,
+        });
       }}
     >
       <div className="absolute top-28 right-4 z-20 bg-white/80 p-2 rounded-xl shadow pointer-events-none">
@@ -361,24 +753,48 @@ export default function IstanbulMap() {
         </button>
       </div>
 
-      <Motion.div
+      {landmarkEditorActive && (
+        <div className="absolute bottom-28 right-4 z-30 flex gap-2 bg-white/90 p-2 rounded-xl shadow pointer-events-auto">
+          <button
+            onClick={exportLandmarkEdits}
+            className="px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-black game-btn"
+          >
+            Kopyala
+          </button>
+          <button
+            onClick={() => setLandmarkEdits({})}
+            className="px-3 py-2 rounded-lg bg-gray-200 text-gray-800 text-xs font-black game-btn"
+          >
+            Sıfırla
+          </button>
+        </div>
+      )}
+
+      <div
+        ref={mapLayerRef}
         key={mapType}
-        drag
-        dragConstraints={constraintsRef}
-        dragElastic={0.2}
-        initial={mapType === 'buyuk.svg' ? { x: 0, y: 0 } : { x: -100, y: -100 }}
-        animate={{ scale: zoom }}
-        transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+        onPointerDown={handleMapPointerDown}
+        onPointerMove={handleMapPointerMove}
+        onPointerUp={finishMapDrag}
+        onPointerCancel={handleMapPointerCancel}
         tabIndex={-1}
-        className={`absolute origin-center cursor-default flex items-center justify-center pointer-events-auto outline-none ${
+        style={{
+          transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+          touchAction: 'none',
+        }}
+        className={`absolute origin-center cursor-grab flex items-center justify-center pointer-events-auto outline-none will-change-transform ${
           mapType === 'buyuk.svg' ? 'w-full h-full' : 'w-[150%] h-[150%]'
         }`}
       >
         <svg
+          ref={svgRef}
           viewBox={svgMap.viewBox}
           className="w-full h-full outline-none"
           role="img"
           aria-label="İstanbul oyun haritası"
+          onPointerMove={landmarkEditorActive ? moveActiveLandmark : undefined}
+          onPointerUp={landmarkEditorActive ? handleLandmarkPointerUp : undefined}
+          onPointerCancel={landmarkEditorActive ? handleLandmarkPointerUp : undefined}
         >
           <rect x={svgMap.minX} y={svgMap.minY} width={svgMap.width} height={svgMap.height} fill={svgMap.backgroundFill} />
           <style>
@@ -425,7 +841,11 @@ export default function IstanbulMap() {
                 role={district ? 'button' : 'presentation'}
                 tabIndex={district && isReachable ? 0 : -1}
                 aria-label={district?.name}
-                onClick={() => {
+                onClick={(event) => {
+                  if (suppressMapClickRef.current) {
+                    event.preventDefault();
+                    return;
+                  }
                   if (district && isReachable) movePlayer(district.id);
                 }}
                 onKeyDown={(event) => {
@@ -459,36 +879,64 @@ export default function IstanbulMap() {
             dangerouslySetInnerHTML={{ __html: svgMap.decorationMarkup }}
           />
 
-          {!svgMap.hasSvgLabels && districtsData.map((district) => (
-            <text
-              key={`${district.id}-label`}
-              x={getMapPoint(district, svgMap).x}
-              y={getMapPoint(district, svgMap).y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontFamily="'Baloo 2', ui-rounded, system-ui, sans-serif"
-              fontSize={district.labelSize || getLabelFontSize(district.name)}
-              fontWeight="800"
-              letterSpacing="0"
-              textLength={district.labelWidth}
-              lengthAdjust={district.labelWidth ? 'spacingAndGlyphs' : undefined}
-              fill="#3B2417"
-              stroke="#FFF4D7"
-              strokeWidth="7"
-              paintOrder="stroke"
-              style={{ filter: 'drop-shadow(0 3px 0 rgba(40, 29, 20, 0.28))' }}
-              pointerEvents="none"
-            >
-              {district.name.toLocaleUpperCase('tr-TR')}
-            </text>
-          ))}
+          {svgMap.landmarks.map((landmark) => {
+            const editedPoint = landmarkEdits[landmark.id];
+            const transform = editedPoint ? replaceTranslate(landmark.transform, editedPoint) : landmark.transform;
+
+            return (
+              <image
+                key={landmark.id}
+                id={landmark.id}
+                className="big-map-landmark-image"
+                href={landmark.href}
+                xlinkHref={landmark.href}
+                width={landmark.width}
+                height={landmark.height}
+                transform={transform}
+                data-base-transform={landmark.transform}
+                pointerEvents={landmarkEditorActive ? 'auto' : 'none'}
+                style={landmarkEditorActive ? { cursor: 'move' } : undefined}
+                onPointerDown={handleLandmarkPointerDown}
+              />
+            );
+          })}
+
+          {!svgMap.hasSvgLabels && districtsData.map((district) => {
+            const labelMetrics = getLabelMetrics(district, pathsByDistrictId.get(district.id), svgMap);
+
+            return (
+              <text
+                key={`${district.id}-label`}
+                x={labelMetrics.x}
+                y={labelMetrics.y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontFamily="'Baloo 2', ui-rounded, system-ui, sans-serif"
+                fontSize={labelMetrics.fontSize}
+                fontWeight="800"
+                letterSpacing="0"
+                textLength={labelMetrics.textLength}
+                lengthAdjust={labelMetrics.textLength ? 'spacingAndGlyphs' : undefined}
+                fill="#3B2417"
+                stroke="#FFF4D7"
+                strokeWidth={svgMap.mapType === 'buyuk.svg' ? '4' : '7'}
+                paintOrder="stroke"
+                style={{ filter: 'drop-shadow(0 3px 0 rgba(40, 29, 20, 0.28))' }}
+                pointerEvents="none"
+              >
+                {labelMetrics.name}
+              </text>
+            );
+          })}
 
           {districtsData.map((district) => {
             const occupiedPlayers = playersByDistrict[district.id] || [];
             const districtStatus = mapState[district.id];
             const isReachable = possibleMoves.includes(district.id);
             const moveDetail = possibleMoveDetails[district.id];
+            const districtPath = pathsByDistrictId.get(district.id);
             const mapPoint = getMapPoint(district, svgMap);
+            const playerMarkerPoint = getPlayerMarkerPoint(district, districtPath, svgMap);
             const isClosed = districtStatus?.type === 'blocked' || Boolean(districtStatus?.ownerId) || districtStatus?.remainingTurns > 0;
 
             if (occupiedPlayers.length === 0 && !isClosed && !isReachable) return null;
@@ -521,11 +969,24 @@ export default function IstanbulMap() {
                   </g>
                 )}
                 {occupiedPlayers.map((player, index) => (
-                  <g key={player.id} transform={`translate(${index * 18 - (occupiedPlayers.length - 1) * 9} 0)`}>
+                  <g
+                    key={player.id}
+                    transform={`translate(${playerMarkerPoint.x - mapPoint.x + index * 18 - (occupiedPlayers.length - 1) * 9} ${playerMarkerPoint.y - mapPoint.y})`}
+                  >
                     <circle r="13" fill={getCharacterTheme(player.character).fill} stroke="white" strokeWidth="4" />
-                    <text y="5" textAnchor="middle" fontSize="10" fontWeight="900" fill="white">
-                      {player.character.substring(0, 1)}
-                    </text>
+                    <clipPath id={`player-avatar-clip-${player.id}`}>
+                      <circle r="12" />
+                    </clipPath>
+                    <image
+                      href={getCharacterMeta(player.character).icon}
+                      x="-22"
+                      y="-22"
+                      width="44"
+                      height="44"
+                      preserveAspectRatio="xMidYMid meet"
+                      clipPath={`url(#player-avatar-clip-${player.id})`}
+                      pointerEvents="none"
+                    />
                   </g>
                 ))}
                 {isReachable && moveDetail?.ferryRequired && (
@@ -547,7 +1008,7 @@ export default function IstanbulMap() {
             );
           })}
         </svg>
-      </Motion.div>
+      </div>
     </div>
   );
 }

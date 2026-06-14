@@ -46,5 +46,7 @@ export function getCharacterKey(character = '') {
 }
 
 export function getCharacterTheme(character) {
-  return characterThemes[getCharacterKey(character)] || characterThemes.ogrenci;
+  const characterKey = getCharacterKey(character);
+  const themeKey = Object.keys(characterThemes).find((key) => characterKey.startsWith(key));
+  return characterThemes[themeKey] || characterThemes.ogrenci;
 }

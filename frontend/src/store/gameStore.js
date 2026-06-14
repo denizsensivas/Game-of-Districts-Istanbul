@@ -123,6 +123,14 @@ const useGameStore = create((set, get) => ({
     }
   },
 
+  syncGameState: () => {
+    const { room, getActiveUserId } = get();
+    const userId = getActiveUserId();
+    if (room?.id && userId) {
+      socket.emit('resumeRoom', { roomId: room.id, userId });
+    }
+  },
+
   fortuneCoffee: () => {
     const { room, getActiveUserId } = get();
     const userId = getActiveUserId();
@@ -296,13 +304,13 @@ const useGameStore = create((set, get) => ({
       gameOver,
       activeRoll
     }) => {
-      const { isTestMode, user } = get();
+      const { isTestMode, controlledUserIds, user } = get();
       const myPlayer = isTestMode
         ? players.find(p => p.userId === currentTurnUserId) || players[0]
         : players.find(p => p.userId === user?.id);
       const controlsActiveRoll = Boolean(
         activeRoll?.userId &&
-        (isTestMode ? activeRoll.userId === currentTurnUserId : activeRoll.userId === user?.id)
+        (isTestMode ? controlledUserIds.includes(activeRoll.userId) : activeRoll.userId === user?.id)
       );
       set({
         players,

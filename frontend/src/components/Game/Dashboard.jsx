@@ -4,6 +4,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Dice5, AlertTriangle, Car, Coffee, Info, LogOut, Repeat2, Ship, Sparkles, Trophy, X } from 'lucide-react';
 import IstanbulMap from '../Map/IstanbulMap';
 import { getCharacterTheme } from '../../utils/characterColors';
+import { getCharacterMeta } from '../../utils/characters';
 
 const activeEventThemes = {
   fortuneCoffee: {
@@ -260,13 +261,17 @@ export default function Dashboard() {
             {players.map((p, i) => (
               <div
                 key={i}
-                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold text-white ${
+                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center overflow-hidden bg-white ${
                   p.isTurn ? 'border-white shadow-md scale-105' : 'border-white/80 opacity-80'
                 }`}
                 style={{ backgroundColor: getCharacterTheme(p.character).fill }}
                 title={p.character}
               >
-                {p.character.substring(0, 1)}
+                <img
+                  src={getCharacterMeta(p.character).icon}
+                  alt={p.character}
+                  className="w-full h-full object-contain scale-[1.85]"
+                />
               </div>
             ))}
           </div>
