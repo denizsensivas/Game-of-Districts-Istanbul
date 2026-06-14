@@ -146,6 +146,14 @@ function indexMoveDetails(moveDetails) {
   return Object.fromEntries(moveDetails.map((move) => [move.districtId, move]));
 }
 
+function getDistrictName(districtId) {
+  return mapData.districts.find((district) => district.id === districtId)?.name || districtId;
+}
+
+function getPlayerDisplayName(player) {
+  return player?.user?.username || player?.username || player?.character || 'Oyuncu';
+}
+
 function rollTicketRates(currentRates) {
   const colors = ['red', 'blue', 'green'];
   const nextRates = { ...currentRates };
@@ -261,11 +269,16 @@ async function endGame(io, roomId) {
   await prisma.room.update({ where: { id: roomId }, data: { status: 'finished' } });
   await prisma.player.updateMany({ where: { roomId }, data: { isTurn: false } });
 
-  const players = await prisma.player.findMany({ where: { roomId }, orderBy: { id: 'asc' } });
+  const players = await prisma.player.findMany({
+    where: { roomId },
+    orderBy: { id: 'asc' },
+    include: { user: true },
+  });
   const rankings = players
     .map((player) => ({
       playerId: player.id,
       userId: player.userId,
+      username: getPlayerDisplayName(player),
       character: player.character,
       score: calculateScore(player, roomState),
       tickets: {
@@ -277,7 +290,7 @@ async function endGame(io, roomId) {
     .sort((a, b) => b.score - a.score);
 
   const winner = rankings[0] || null;
-  const staticEvent = winner ? `${winner.character} oyunu kazandı` : 'Oyun sona erdi';
+  const staticEvent = winner ? `${winner.username} oyunu kazandı` : 'Oyun sona erdi';
 
   io.to(roomId).emit('gameEnded', { rankings });
   await revealActiveEvent(io, roomId, {
@@ -500,8 +513,14 @@ module.exports = (io) => {
     socket.on('commitMove', async ({ roomId, userId, targetDistrictId }) => {
       try {
         const roomState = getRoomState(roomId);
-        const playerList = await prisma.player.findMany({ where: { roomId }, orderBy: { id: 'asc' } });
+        const playerList = await prisma.player.findMany({
+          where: { roomId },
+          orderBy: { id: 'asc' },
+          include: { user: true },
+        });
         const player = playerList.find((item) => item.userId === userId);
+        const playerName = getPlayerDisplayName(player);
+        const districtName = getDistrictName(targetDistrictId);
 
         if (!player || !player.isTurn) return socket.emit('error', { message: 'Sıra sizde değil.' });
         if (!roomState.lastRoll || roomState.lastRoll.userId !== userId) {
@@ -533,7 +552,7 @@ module.exports = (io) => {
             remainingTurns: 3,
             type: 'normal',
           };
-          setStaticActiveEvent(roomState, `${player.character} bir masayı kapattı`);
+          setStaticActiveEvent(roomState, `${playerName} ${districtName} masasını kapattı`);
         } else if (districtState.ownerId !== player.id) {
           const owner = playerList.find((item) => item.id === districtState.ownerId);
           const payment = Math.min(nextRedTickets, RENT_COST_RED);
@@ -545,9 +564,9 @@ module.exports = (io) => {
               data: { redTickets: owner.redTickets + payment },
             });
           }
-          setStaticActiveEvent(roomState, `${player.character} çay ısmarladı`);
+          setStaticActiveEvent(roomState, `${playerName} ${getPlayerDisplayName(owner)} için çay ısmarladı`);
         } else {
-          setStaticActiveEvent(roomState, `${player.character} kendi mekanına uğradı`);
+          setStaticActiveEvent(roomState, `${playerName} ${districtName} mekanına uğradı`);
         }
 
         updates.redTickets = nextRedTickets;
