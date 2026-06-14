@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+function getDefaultApiUrl() {
+  if (typeof window === 'undefined') return 'http://localhost:3001';
+
+  const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  return isLocalHost ? 'http://localhost:3001' : window.location.origin;
+}
+
+const API_URL = import.meta.env.VITE_API_URL || getDefaultApiUrl();
 const socket = io(API_URL);
 
 const freshGameSession = {

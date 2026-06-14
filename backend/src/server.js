@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 require('dotenv').config();
@@ -23,6 +24,12 @@ app.get('/api/health', (req, res) => {
 
 // Socket.io Game Handler
 require('./socket/gameHandler')(io);
+
+const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDistPath));
+app.get(/^(?!\/api\/).*/, (req, res) => {
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
+});
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
