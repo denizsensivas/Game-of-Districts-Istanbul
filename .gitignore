@@ -1,1 +1,36 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment files
+.env
+*.env
+!.env.example
+*/.env
+!*/.env.example
+
+# Build output
+dist/
+build/
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS/editor files
+.DS_Store
+**/.DS_Store
+.vscode/
+.idea/
+
+# Local databases and generated files
+*.db
+*.sqlite
+*.sqlite3
+backend/generated/prisma/
+
+# Old merged scratch docs
 docs/oldmergedPRD.md
