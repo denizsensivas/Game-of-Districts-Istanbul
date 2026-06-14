@@ -84,8 +84,8 @@ export default function Lobby() {
             type="button"
             onClick={() => setSelectedMapType(option.id)}
             className={`p-3 rounded-2xl border-2 text-left transition-all ${selectedMapType === option.id
-                ? 'bg-[#fff4d7] border-[var(--color-accent)] shadow-[0_4px_0_#d89313]'
-                : 'bg-gray-50 border-transparent hover:bg-gray-100'
+              ? 'bg-[#fff4d7] border-[var(--color-accent)] shadow-[0_4px_0_#d89313]'
+              : 'bg-gray-50 border-transparent hover:bg-gray-100'
               }`}
           >
             <div className="flex items-center gap-2 font-black">
@@ -117,7 +117,7 @@ export default function Lobby() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full p-3 rounded-2xl border-4 border-white focus:border-[var(--color-primary)] outline-none text-lg bg-[#fffdf6] shadow-inner"
-                placeholder="Örn: İstanbulunSefiri"
+                placeholder="Örn: İstanbulunKedileri"
                 required
               />
             </div>
