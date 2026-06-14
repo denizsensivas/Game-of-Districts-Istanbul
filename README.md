@@ -2,7 +2,6 @@
 
 **Game of Districts**, İstanbul'un harika ilçelerini dev bir oyun tahtasına dönüştüren, arkadaşlarınızla internet üzerinden canlı oynayabileceğiniz eğlenceli bir masa oyunudur.
 ---
-
 ## 🌟 Oyunun Amacı Nedir? Nasıl Oynanır?
 
 1. **Karakterini Seç:** Oyuna başlarken kendine bir karakter seçersin. (Öğrenci, Esnaf, Turist veya Beyaz Yaka). Her karakterin kendine göre avantajları vardır!
