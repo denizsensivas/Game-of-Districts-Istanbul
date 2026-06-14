@@ -1,9 +1,6 @@
-# 🎲 Game of Districts (İstanbul İlçe Kapmaca!)
+# 🎲 Game of Districts: İstanbul
 
 **Game of Districts**, İstanbul'un harika ilçelerini dev bir oyun tahtasına dönüştüren, arkadaşlarınızla internet üzerinden canlı oynayabileceğiniz eğlenceli bir masa oyunudur.
-
-Bunu **İstanbul temalı bir Monopoly** gibi düşünebilirsiniz! 
-
 ---
 
 ## 🌟 Oyunun Amacı Nedir? Nasıl Oynanır?
