@@ -117,7 +117,7 @@ export default function Lobby() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full p-3 rounded-2xl border-4 border-white focus:border-[var(--color-primary)] outline-none text-lg bg-[#fffdf6] shadow-inner"
-                placeholder="Örn:İstanbulunKedileri"
+                placeholder="Örn: İstanbulunKedileri"
                 required
               />
             </div>
