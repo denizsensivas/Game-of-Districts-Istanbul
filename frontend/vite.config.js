@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   preview: {
     allowedHosts: [
-      'laudable-ambition-production-8b82.up.railway.app'
+      'game-of-districts-istanbul.up.railway.app'
     ]
   }
 })
